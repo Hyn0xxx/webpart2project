@@ -28,7 +28,7 @@ try {
 }
 
 // --------------------
-// ПРОВЕРКА И СОЗДАНИЕ ТАБЛИЦ
+// ПРОВЕРКА И СОЗДАНИЕ ТАБЛИЦ (БЕЗ FOREIGN KEY)
 // --------------------
 
 // Проверяем, существует ли таблица applications
@@ -61,14 +61,12 @@ if (!$tableExists) {
         )
     ");
     
-    // Создаем таблицу связи
+    // Создаем таблицу связи (без FOREIGN KEY)
     $pdo->exec("
         CREATE TABLE application_cars (
             id INT AUTO_INCREMENT PRIMARY KEY,
             application_id INT NOT NULL,
-            car_id INT NOT NULL,
-            INDEX(application_id),
-            INDEX(car_id)
+            car_id INT NOT NULL
         )
     ");
     
@@ -86,7 +84,11 @@ if (!$tableExists) {
     
     $stmt = $pdo->prepare("INSERT INTO car_models (name, price) VALUES (?, ?)");
     foreach ($cars as $car) {
-        $stmt->execute($car);
+        try {
+            $stmt->execute($car);
+        } catch(PDOException $e) {
+            // Игнорируем ошибки дубликатов
+        }
     }
 }
 
@@ -494,6 +496,7 @@ if (!empty($_SESSION['generated_login']) && $justSaved) {
         <div class="video-background">
             <video autoplay muted loop playsinline>
                 <source src="assets/video/large-vecteezy_selective-focus-on-a-car-male-customer-talking-to-auto_33116350_x-large.mp4" type="video/mp4">
+                Ваш браузер не поддерживает видео.
             </video>
             <div class="video-overlay"></div>
         </div>
