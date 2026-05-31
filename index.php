@@ -28,106 +28,61 @@ try {
 }
 
 // --------------------
-// СОЗДАНИЕ ТАБЛИЦ (простой способ)
+// СОЗДАНИЕ ТАБЛИЦ (СНАЧАЛА СОЗДАЕМ, ПОТОМ ИСПОЛЬЗУЕМ)
 // --------------------
 
-try {
-    // Таблица заявок
-    $pdo->exec("
-        CREATE TABLE IF NOT EXISTS applications (
-            id INT AUTO_INCREMENT PRIMARY KEY,
-            full_name VARCHAR(255) NOT NULL,
-            phone VARCHAR(50) NOT NULL,
-            email VARCHAR(255) NOT NULL,
-            birth_date DATE NOT NULL,
-            gender ENUM('male', 'female', 'other') NOT NULL,
-            wish TEXT,
-            contract_accepted TINYINT(1) DEFAULT 0,
-            login VARCHAR(50) UNIQUE,
-            password_hash VARCHAR(255),
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-    ");
-    
-    // Таблица автомобилей
-    $pdo->exec("
-        CREATE TABLE IF NOT EXISTS car_models (
-            id INT AUTO_INCREMENT PRIMARY KEY,
-            name VARCHAR(100) UNIQUE NOT NULL,
-            price VARCHAR(100) NOT NULL
-        )
-    ");
-    
-    // Таблица связи (простая, без FOREIGN KEY)
-    $pdo->exec("
-        CREATE TABLE IF NOT EXISTS application_cars (
-            id INT AUTO_INCREMENT PRIMARY KEY,
-            application_id INT NOT NULL,
-            car_id INT NOT NULL
-        )
-    ");
-    
-} catch(PDOException $e) {
-    // Если ошибка, пробуем удалить таблицы и создать заново
-    try {
-        $pdo->exec("DROP TABLE IF EXISTS application_cars");
-        $pdo->exec("DROP TABLE IF EXISTS applications");
-        $pdo->exec("DROP TABLE IF EXISTS car_models");
-        
-        $pdo->exec("
-            CREATE TABLE applications (
-                id INT AUTO_INCREMENT PRIMARY KEY,
-                full_name VARCHAR(255) NOT NULL,
-                phone VARCHAR(50) NOT NULL,
-                email VARCHAR(255) NOT NULL,
-                birth_date DATE NOT NULL,
-                gender ENUM('male', 'female', 'other') NOT NULL,
-                wish TEXT,
-                contract_accepted TINYINT(1) DEFAULT 0,
-                login VARCHAR(50) UNIQUE,
-                password_hash VARCHAR(255),
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        ");
-        
-        $pdo->exec("
-            CREATE TABLE car_models (
-                id INT AUTO_INCREMENT PRIMARY KEY,
-                name VARCHAR(100) UNIQUE NOT NULL,
-                price VARCHAR(100) NOT NULL
-            )
-        ");
-        
-        $pdo->exec("
-            CREATE TABLE application_cars (
-                id INT AUTO_INCREMENT PRIMARY KEY,
-                application_id INT NOT NULL,
-                car_id INT NOT NULL
-            )
-        ");
-    } catch(PDOException $e2) {
-        // Игнорируем
-    }
-}
+// Создаем таблицу заявок
+$pdo->exec("
+    CREATE TABLE IF NOT EXISTS applications (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        full_name VARCHAR(255) NOT NULL,
+        phone VARCHAR(50) NOT NULL,
+        email VARCHAR(255) NOT NULL,
+        birth_date DATE NOT NULL,
+        gender ENUM('male', 'female', 'other') NOT NULL,
+        wish TEXT,
+        contract_accepted TINYINT(1) DEFAULT 0,
+        login VARCHAR(50) UNIQUE,
+        password_hash VARCHAR(255),
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )
+");
 
-// Добавляем автомобили
-$cars = [
-    ['Porsche Panamera', 'от 9 500 000 ₽'],
-    ['Mercedes-Benz S-Class', 'от 12 000 000 ₽'],
-    ['BMW 7 Series', 'от 8 900 000 ₽'],
-    ['Audi A8', 'от 7 800 000 ₽'],
-    ['Lexus LS', 'от 7 500 000 ₽'],
-    ['Tesla Model S', 'от 6 500 000 ₽'],
-    ['Jaguar XJ', 'от 6 200 000 ₽'],
-    ['Maserati Quattroporte', 'от 10 500 000 ₽']
-];
+// Создаем таблицу автомобилей
+$pdo->exec("
+    CREATE TABLE IF NOT EXISTS car_models (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        name VARCHAR(100) UNIQUE NOT NULL,
+        price VARCHAR(100) NOT NULL
+    )
+");
 
-$stmt = $pdo->prepare("INSERT IGNORE INTO car_models (name, price) VALUES (?, ?)");
-foreach ($cars as $car) {
-    try {
+// Создаем таблицу связи
+$pdo->exec("
+    CREATE TABLE IF NOT EXISTS application_cars (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        application_id INT NOT NULL,
+        car_id INT NOT NULL
+    )
+");
+
+// Добавляем автомобили (только если таблица пустая)
+$checkCars = $pdo->query("SELECT COUNT(*) FROM car_models")->fetchColumn();
+if ($checkCars == 0) {
+    $cars = [
+        ['Porsche Panamera', 'от 9 500 000 ₽'],
+        ['Mercedes-Benz S-Class', 'от 12 000 000 ₽'],
+        ['BMW 7 Series', 'от 8 900 000 ₽'],
+        ['Audi A8', 'от 7 800 000 ₽'],
+        ['Lexus LS', 'от 7 500 000 ₽'],
+        ['Tesla Model S', 'от 6 500 000 ₽'],
+        ['Jaguar XJ', 'от 6 200 000 ₽'],
+        ['Maserati Quattroporte', 'от 10 500 000 ₽']
+    ];
+    
+    $stmt = $pdo->prepare("INSERT INTO car_models (name, price) VALUES (?, ?)");
+    foreach ($cars as $car) {
         $stmt->execute($car);
-    } catch(PDOException $e) {
-        // Игнорируем дубликаты
     }
 }
 
@@ -149,7 +104,7 @@ function generatePassword($length = 10) {
 }
 
 // --------------------
-// СПИСОК АВТОМОБИЛЕЙ
+// СПИСОК АВТОМОБИЛЕЙ (ТЕПЕРЬ ТАБЛИЦА СУЩЕСТВУЕТ)
 // --------------------
 
 $carsList = $pdo->query("SELECT id, name, price FROM car_models ORDER BY name")->fetchAll();
