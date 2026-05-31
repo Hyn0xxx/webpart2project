@@ -28,74 +28,108 @@ try {
 }
 
 // --------------------
-// ПЕРЕСОЗДАНИЕ ТАБЛИЦ
+// ФУНКЦИЯ ДЛЯ БЕЗОПАСНОГО СОЗДАНИЯ ТАБЛИЦ
+// --------------------
+
+function safeTableCreate($pdo, $sql) {
+    try {
+        $pdo->exec($sql);
+        return true;
+    } catch(PDOException $e) {
+        if ($e->getCode() != '42S01') { // Игнорируем ошибку "таблица уже существует"
+            throw $e;
+        }
+        return false;
+    }
+}
+
+// --------------------
+// УДАЛЕНИЕ СТАРЫХ ТАБЛИЦ (ЕСЛИ ОНИ ЕСТЬ)
 // --------------------
 
 try {
+    // Отключаем проверку внешних ключей
     $pdo->exec("SET FOREIGN_KEY_CHECKS = 0");
-    $pdo->exec("DROP TABLE IF EXISTS application_cars");
-    $pdo->exec("DROP TABLE IF EXISTS applications");
-    $pdo->exec("DROP TABLE IF EXISTS car_models");
+    
+    // Проверяем существование таблиц и удаляем их
+    $tables = ['application_cars', 'applications', 'car_models'];
+    foreach ($tables as $table) {
+        $result = $pdo->query("SHOW TABLES LIKE '$table'");
+        if ($result->rowCount() > 0) {
+            $pdo->exec("DROP TABLE `$table`");
+        }
+    }
+    
+    // Включаем проверку внешних ключей
     $pdo->exec("SET FOREIGN_KEY_CHECKS = 1");
 } catch(PDOException $e) {
     // Игнорируем ошибки при удалении
 }
 
+// --------------------
+// СОЗДАНИЕ НОВЫХ ТАБЛИЦ
+// --------------------
+
 // Таблица заявок
-$pdo->exec("
-    CREATE TABLE applications (
-        id INT AUTO_INCREMENT PRIMARY KEY,
-        full_name VARCHAR(255) NOT NULL,
-        phone VARCHAR(50) NOT NULL,
-        email VARCHAR(255) NOT NULL,
-        birth_date DATE NOT NULL,
-        gender ENUM('male', 'female', 'other') NOT NULL,
-        wish TEXT,
-        contract_accepted TINYINT(1) DEFAULT 0,
-        login VARCHAR(50) UNIQUE,
-        password_hash VARCHAR(255),
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-");
+$sql = "
+CREATE TABLE applications (
+    id INT(11) AUTO_INCREMENT PRIMARY KEY,
+    full_name VARCHAR(255) NOT NULL,
+    phone VARCHAR(50) NOT NULL,
+    email VARCHAR(255) NOT NULL,
+    birth_date DATE NOT NULL,
+    gender ENUM('male', 'female', 'other') NOT NULL,
+    wish TEXT,
+    contract_accepted TINYINT(1) DEFAULT 0,
+    login VARCHAR(50) UNIQUE,
+    password_hash VARCHAR(255),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci";
+$pdo->exec($sql);
 
 // Таблица автомобилей
-$pdo->exec("
-    CREATE TABLE car_models (
-        id INT AUTO_INCREMENT PRIMARY KEY,
-        name VARCHAR(100) UNIQUE NOT NULL,
-        price VARCHAR(100) NOT NULL
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-");
+$sql = "
+CREATE TABLE car_models (
+    id INT(11) AUTO_INCREMENT PRIMARY KEY,
+    name VARCHAR(100) UNIQUE NOT NULL,
+    price VARCHAR(100) NOT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci";
+$pdo->exec($sql);
 
-// Таблица связи заявок и автомобилей
-$pdo->exec("
-    CREATE TABLE application_cars (
-        application_id INT NOT NULL,
-        car_id INT NOT NULL,
-        PRIMARY KEY (application_id, car_id),
-        FOREIGN KEY (application_id) REFERENCES applications(id) ON DELETE CASCADE,
-        FOREIGN KEY (car_id) REFERENCES car_models(id) ON DELETE CASCADE
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-");
+// Таблица связи
+$sql = "
+CREATE TABLE application_cars (
+    application_id INT(11) NOT NULL,
+    car_id INT(11) NOT NULL,
+    PRIMARY KEY (application_id, car_id),
+    INDEX idx_application_id (application_id),
+    INDEX idx_car_id (car_id),
+    FOREIGN KEY (application_id) REFERENCES applications(id) ON DELETE CASCADE,
+    FOREIGN KEY (car_id) REFERENCES car_models(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci";
+$pdo->exec($sql);
 
-// Добавляем автомобили
+// --------------------
+// ДОБАВЛЕНИЕ АВТОМОБИЛЕЙ
+// --------------------
+
 $cars = [
-    ['name' => 'Porsche Panamera', 'price' => 'от 9 500 000 ₽'],
-    ['name' => 'Mercedes-Benz S-Class', 'price' => 'от 12 000 000 ₽'],
-    ['name' => 'BMW 7 Series', 'price' => 'от 8 900 000 ₽'],
-    ['name' => 'Audi A8', 'price' => 'от 7 800 000 ₽'],
-    ['name' => 'Lexus LS', 'price' => 'от 7 500 000 ₽'],
-    ['name' => 'Tesla Model S', 'price' => 'от 6 500 000 ₽'],
-    ['name' => 'Jaguar XJ', 'price' => 'от 6 200 000 ₽'],
-    ['name' => 'Maserati Quattroporte', 'price' => 'от 10 500 000 ₽']
+    ['Porsche Panamera', 'от 9 500 000 ₽'],
+    ['Mercedes-Benz S-Class', 'от 12 000 000 ₽'],
+    ['BMW 7 Series', 'от 8 900 000 ₽'],
+    ['Audi A8', 'от 7 800 000 ₽'],
+    ['Lexus LS', 'от 7 500 000 ₽'],
+    ['Tesla Model S', 'от 6 500 000 ₽'],
+    ['Jaguar XJ', 'от 6 200 000 ₽'],
+    ['Maserati Quattroporte', 'от 10 500 000 ₽']
 ];
 
-$stmt = $pdo->prepare("INSERT INTO car_models (name, price) VALUES (?, ?)");
+$stmt = $pdo->prepare("INSERT IGNORE INTO car_models (name, price) VALUES (?, ?)");
 foreach ($cars as $car) {
     try {
-        $stmt->execute([$car['name'], $car['price']]);
+        $stmt->execute($car);
     } catch(PDOException $e) {
-        // Если запись уже существует, игнорируем
+        // Игнорируем дубликаты
     }
 }
 
@@ -462,272 +496,40 @@ if (!empty($_SESSION['generated_login']) && $justSaved) {
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&family=Open+Sans:wght@400;600;700&display=swap" rel="stylesheet">
     <style>
-        /* Стили для формы заказа */
-        .order-section {
-            background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
-            padding: 80px 0;
-        }
-        
-        .order-container {
-            max-width: 800px;
-            margin: 0 auto;
-            background: white;
-            border-radius: 20px;
-            box-shadow: 0 20px 60px rgba(0,0,0,0.1);
-            overflow: hidden;
-        }
-        
-        .order-header {
-            background: #800020;
-            color: white;
-            padding: 30px;
-            text-align: center;
-        }
-        
-        .order-header h2 {
-            font-size: 1.8em;
-            margin-bottom: 10px;
-        }
-        
-        .order-body {
-            padding: 40px;
-        }
-        
-        .auth-box {
-            background: #9E9E9E;
-            padding: 25px;
-            border-radius: 15px;
-            margin-bottom: 30px;
-        }
-        
-        .auth-box h3 {
-            color: #800020;
-            margin-bottom: 20px;
-        }
-        
-        .form-field {
-            margin-bottom: 20px;
-        }
-        
-        .form-field label {
-            display: block;
-            margin-bottom: 8px;
-            font-weight: 600;
-            color: #333;
-        }
-        
-        .form-field input,
-        .form-field select,
-        .form-field textarea {
-            width: 100%;
-            padding: 12px 15px;
-            border: 2px solid #e0e0e0;
-            border-radius: 10px;
-            font-size: 1em;
-            transition: all 0.3s;
-        }
-        
-        .form-field input:focus,
-        .form-field select:focus,
-        .form-field textarea:focus {
-            outline: none;
-            border-color: #9E9E9E;
-            box-shadow: 0 0 0 3px rgba(158,158,158,0.3);
-        }
-        
-        .form-field select[multiple] {
-            height: 150px;
-        }
-        
-        .radio-group {
-            display: flex;
-            gap: 20px;
-            padding: 10px 0;
-        }
-        
-        .radio-group label {
-            display: inline-flex;
-            align-items: center;
-            font-weight: normal;
-            margin-bottom: 0;
-            cursor: pointer;
-        }
-        
-        .radio-group input {
-            width: auto;
-            margin-right: 8px;
-        }
-        
-        .checkbox-field {
-            display: flex;
-            align-items: center;
-            cursor: pointer;
-        }
-        
-        .checkbox-field input {
-            width: auto;
-            margin-right: 10px;
-        }
-        
-        .btn-send {
-            background: #800020;
-            color: white;
-            border: none;
-            padding: 14px 30px;
-            font-size: 1em;
-            font-weight: 600;
-            border-radius: 10px;
-            cursor: pointer;
-            transition: all 0.3s;
-            width: 100%;
-        }
-        
-        .btn-send:hover {
-            background: #9E9E9E;
-            color: #800020;
-            transform: translateY(-2px);
-        }
-        
-        .error-msg {
-            color: #dc3545;
-            font-size: 0.85em;
-            margin-top: 5px;
-            display: block;
-        }
-        
-        .success-msg {
-            background: #d4edda;
-            color: #155724;
-            padding: 15px;
-            border-radius: 10px;
-            margin-bottom: 20px;
-            border-left: 4px solid #28a745;
-        }
-        
-        .form-error {
-            border-color: #dc3545 !important;
-        }
-        
-        .logout-link {
-            display: inline-block;
-            margin-top: 10px;
-            color: #800020;
-            text-decoration: none;
-            font-weight: 600;
-        }
-        
-        .logout-link:hover {
-            text-decoration: underline;
-        }
-        
-        .admin-button {
-            position: fixed;
-            bottom: 20px;
-            right: 20px;
-            background: #800020;
-            color: white;
-            padding: 12px 20px;
-            border-radius: 30px;
-            text-decoration: none;
-            font-weight: 600;
-            box-shadow: 0 5px 15px rgba(0,0,0,0.2);
-            transition: all 0.3s;
-            z-index: 1000;
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            cursor: pointer;
-            border: none;
-        }
-        
-        .admin-button:hover {
-            background: #9E9E9E;
-            color: #800020;
-            transform: translateY(-3px);
-        }
-        
-        hr {
-            margin: 30px 0;
-            border: none;
-            height: 1px;
-            background: linear-gradient(to right, transparent, #800020, transparent);
-        }
-        
-        .modal-overlay {
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background: rgba(0,0,0,0.7);
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            z-index: 2000;
-        }
-        
-        .modal-overlay.hidden {
-            display: none;
-        }
-        
-        .modal-window {
-            background: white;
-            width: 90%;
-            max-width: 450px;
-            border-radius: 20px;
-            padding: 30px;
-            position: relative;
-            animation: modalAppear 0.3s ease;
-        }
-        
-        @keyframes modalAppear {
-            from {
-                opacity: 0;
-                transform: translateY(-50px);
-            }
-            to {
-                opacity: 1;
-                transform: translateY(0);
-            }
-        }
-        
-        .modal-close-btn {
-            position: absolute;
-            top: 15px;
-            right: 15px;
-            background: none;
-            border: none;
-            font-size: 1.5rem;
-            color: #999;
-            cursor: pointer;
-        }
-        
-        .modal-close-btn:hover {
-            color: #800020;
-        }
-        
-        .modal-title {
-            font-size: 1.5rem;
-            color: #800020;
-            margin-bottom: 20px;
-            text-align: center;
-        }
-        
-        @media (max-width: 768px) {
-            .order-body {
-                padding: 20px;
-            }
-            
-            .radio-group {
-                flex-direction: column;
-                gap: 10px;
-            }
-            
-            .admin-button {
-                padding: 8px 15px;
-                font-size: 0.9em;
-            }
-        }
+        .order-section { background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%); padding: 80px 0; }
+        .order-container { max-width: 800px; margin: 0 auto; background: white; border-radius: 20px; box-shadow: 0 20px 60px rgba(0,0,0,0.1); overflow: hidden; }
+        .order-header { background: #800020; color: white; padding: 30px; text-align: center; }
+        .order-header h2 { font-size: 1.8em; margin-bottom: 10px; }
+        .order-body { padding: 40px; }
+        .auth-box { background: #9E9E9E; padding: 25px; border-radius: 15px; margin-bottom: 30px; }
+        .auth-box h3 { color: #800020; margin-bottom: 20px; }
+        .form-field { margin-bottom: 20px; }
+        .form-field label { display: block; margin-bottom: 8px; font-weight: 600; color: #333; }
+        .form-field input, .form-field select, .form-field textarea { width: 100%; padding: 12px 15px; border: 2px solid #e0e0e0; border-radius: 10px; font-size: 1em; transition: all 0.3s; }
+        .form-field input:focus, .form-field select:focus, .form-field textarea:focus { outline: none; border-color: #9E9E9E; box-shadow: 0 0 0 3px rgba(158,158,158,0.3); }
+        .form-field select[multiple] { height: 150px; }
+        .radio-group { display: flex; gap: 20px; padding: 10px 0; }
+        .radio-group label { display: inline-flex; align-items: center; font-weight: normal; margin-bottom: 0; cursor: pointer; }
+        .radio-group input { width: auto; margin-right: 8px; }
+        .checkbox-field { display: flex; align-items: center; cursor: pointer; }
+        .checkbox-field input { width: auto; margin-right: 10px; }
+        .btn-send { background: #800020; color: white; border: none; padding: 14px 30px; font-size: 1em; font-weight: 600; border-radius: 10px; cursor: pointer; transition: all 0.3s; width: 100%; }
+        .btn-send:hover { background: #9E9E9E; color: #800020; transform: translateY(-2px); }
+        .error-msg { color: #dc3545; font-size: 0.85em; margin-top: 5px; display: block; }
+        .success-msg { background: #d4edda; color: #155724; padding: 15px; border-radius: 10px; margin-bottom: 20px; border-left: 4px solid #28a745; }
+        .form-error { border-color: #dc3545 !important; }
+        .logout-link { display: inline-block; margin-top: 10px; color: #800020; text-decoration: none; font-weight: 600; }
+        .admin-button { position: fixed; bottom: 20px; right: 20px; background: #800020; color: white; padding: 12px 20px; border-radius: 30px; font-weight: 600; box-shadow: 0 5px 15px rgba(0,0,0,0.2); transition: all 0.3s; z-index: 1000; display: flex; align-items: center; gap: 8px; cursor: pointer; border: none; }
+        .admin-button:hover { background: #9E9E9E; color: #800020; transform: translateY(-3px); }
+        hr { margin: 30px 0; border: none; height: 1px; background: linear-gradient(to right, transparent, #800020, transparent); }
+        .modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); display: flex; justify-content: center; align-items: center; z-index: 2000; }
+        .modal-overlay.hidden { display: none; }
+        .modal-window { background: white; width: 90%; max-width: 450px; border-radius: 20px; padding: 30px; position: relative; animation: modalAppear 0.3s ease; }
+        @keyframes modalAppear { from { opacity: 0; transform: translateY(-50px); } to { opacity: 1; transform: translateY(0); } }
+        .modal-close-btn { position: absolute; top: 15px; right: 15px; background: none; border: none; font-size: 1.5rem; color: #999; cursor: pointer; }
+        .modal-close-btn:hover { color: #800020; }
+        .modal-title { font-size: 1.5rem; color: #800020; margin-bottom: 20px; text-align: center; }
+        @media (max-width: 768px) { .order-body { padding: 20px; } .radio-group { flex-direction: column; gap: 10px; } .admin-button { padding: 8px 15px; font-size: 0.9em; } }
     </style>
 </head>
 <body>
@@ -797,7 +599,6 @@ if (!empty($_SESSION['generated_login']) && $justSaved) {
             <div class="container">
                 <h2 class="section-title">Популярные модели</h2>
                 <p class="section-subtitle">Автомобили, которые выбирают наши клиенты</p>
-                
                 <div class="slider-container">
                     <div class="slider">
                         <div class="slide active">
@@ -863,7 +664,7 @@ if (!empty($_SESSION['generated_login']) && $justSaved) {
             </div>
         </section>
 
-        <!-- Форма заказа автомобиля (ЕДИНСТВЕННАЯ ФОРМА) -->
+        <!-- Форма заказа автомобиля -->
         <section class="order-section" id="order-form">
             <div class="container">
                 <div class="order-container">
@@ -1089,7 +890,7 @@ if (!empty($_SESSION['generated_login']) && $justSaved) {
             if (mobileMenuBtn) mobileMenuBtn.addEventListener('click', function() { mobileMenu.classList.add('active'); document.body.style.overflow = 'hidden'; });
             if (closeMenuBtn) closeMenuBtn.addEventListener('click', function() { mobileMenu.classList.remove('active'); document.body.style.overflow = ''; });
             
-            // Фон навигации при скролле
+            // Фон навигации
             window.addEventListener('scroll', function() {
                 const navbar = document.querySelector('.navbar');
                 if (navbar) {
@@ -1129,7 +930,7 @@ if (!empty($_SESSION['generated_login']) && $justSaved) {
                 });
             }
             
-            // AJAX отправка формы
+            // AJAX отправка
             const orderForm = document.getElementById('orderForm');
             const formSubmitBtn = document.getElementById('formSubmitBtn');
             const ajaxMessages = document.getElementById('ajaxMessages');
