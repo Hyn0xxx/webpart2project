@@ -28,8 +28,19 @@ try {
 }
 
 // --------------------
-// СОЗДАНИЕ ТАБЛИЦ
+// СОЗДАНИЕ ТАБЛИЦ (с правильными типами данных)
 // --------------------
+
+// Сначала удаляем существующие таблицы, если они есть (для пересоздания с правильными типами)
+try {
+    $pdo->exec("SET FOREIGN_KEY_CHECKS = 0");
+    $pdo->exec("DROP TABLE IF EXISTS application_cars");
+    $pdo->exec("DROP TABLE IF EXISTS applications");
+    $pdo->exec("DROP TABLE IF EXISTS car_models");
+    $pdo->exec("SET FOREIGN_KEY_CHECKS = 1");
+} catch(PDOException $e) {
+    // Таблицы могут не существовать, игнорируем ошибку
+}
 
 $pdo->exec("
     CREATE TABLE IF NOT EXISTS applications (
@@ -44,7 +55,7 @@ $pdo->exec("
         login VARCHAR(50) UNIQUE,
         password_hash VARCHAR(255),
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-    )
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
 ");
 
 $pdo->exec("
@@ -52,17 +63,17 @@ $pdo->exec("
         id INT AUTO_INCREMENT PRIMARY KEY,
         name VARCHAR(100) UNIQUE NOT NULL,
         price VARCHAR(100) NOT NULL
-    )
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
 ");
 
 $pdo->exec("
     CREATE TABLE IF NOT EXISTS application_cars (
-        application_id INT,
-        car_id INT,
+        application_id INT NOT NULL,
+        car_id INT NOT NULL,
         PRIMARY KEY (application_id, car_id),
         FOREIGN KEY (application_id) REFERENCES applications(id) ON DELETE CASCADE,
         FOREIGN KEY (car_id) REFERENCES car_models(id) ON DELETE CASCADE
-    )
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
 ");
 
 // Добавляем автомобили, если их нет
@@ -76,9 +87,14 @@ $cars = [
     ['name' => 'Jaguar XJ', 'price' => 'от 6 200 000 ₽'],
     ['name' => 'Maserati Quattroporte', 'price' => 'от 10 500 000 ₽']
 ];
+
 $stmt = $pdo->prepare("INSERT IGNORE INTO car_models (name, price) VALUES (?, ?)");
 foreach ($cars as $car) {
-    $stmt->execute([$car['name'], $car['price']]);
+    try {
+        $stmt->execute([$car['name'], $car['price']]);
+    } catch(PDOException $e) {
+        // Если запись уже существует, игнорируем
+    }
 }
 
 // --------------------
@@ -651,6 +667,7 @@ if (!empty($_SESSION['generated_login']) && $justSaved) {
             display: flex;
             align-items: center;
             gap: 8px;
+            cursor: pointer;
         }
         
         .admin-link:hover {
@@ -665,6 +682,66 @@ if (!empty($_SESSION['generated_login']) && $justSaved) {
             border: none;
             height: 1px;
             background: linear-gradient(to right, transparent, #800020, transparent);
+        }
+        
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.7);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 2000;
+        }
+        
+        .modal-overlay.hidden {
+            display: none;
+        }
+        
+        .modal {
+            background: white;
+            width: 90%;
+            max-width: 450px;
+            border-radius: 20px;
+            padding: 30px;
+            position: relative;
+            animation: modalAppear 0.3s ease;
+        }
+        
+        @keyframes modalAppear {
+            from {
+                opacity: 0;
+                transform: translateY(-50px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+        
+        .modal-close {
+            position: absolute;
+            top: 15px;
+            right: 15px;
+            background: none;
+            border: none;
+            font-size: 1.5rem;
+            color: #999;
+            cursor: pointer;
+        }
+        
+        .modal-close:hover {
+            color: #800020;
+        }
+        
+        .modal-title {
+            font-size: 1.5rem;
+            color: #800020;
+            margin-bottom: 20px;
+            text-align: center;
         }
         
         @media (max-width: 768px) {
@@ -1029,7 +1106,7 @@ if (!empty($_SESSION['generated_login']) && $justSaved) {
         </footer>
     </main>
     
-    <!-- Кнопка для администратора (SSH-like подключение) -->
+    <!-- Кнопка для администратора -->
     <div class="admin-link" id="adminBtn">
         <i class="fas fa-shield-alt"></i> Администратору
     </div>
@@ -1055,68 +1132,6 @@ if (!empty($_SESSION['generated_login']) && $justSaved) {
             </form>
         </div>
     </div>
-
-    <style>
-        .modal-overlay {
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background: rgba(0,0,0,0.7);
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            z-index: 2000;
-        }
-        
-        .modal-overlay.hidden {
-            display: none;
-        }
-        
-        .modal {
-            background: white;
-            width: 90%;
-            max-width: 450px;
-            border-radius: 20px;
-            padding: 30px;
-            position: relative;
-            animation: modalAppear 0.3s ease;
-        }
-        
-        @keyframes modalAppear {
-            from {
-                opacity: 0;
-                transform: translateY(-50px);
-            }
-            to {
-                opacity: 1;
-                transform: translateY(0);
-            }
-        }
-        
-        .modal-close {
-            position: absolute;
-            top: 15px;
-            right: 15px;
-            background: none;
-            border: none;
-            font-size: 1.5rem;
-            color: #999;
-            cursor: pointer;
-        }
-        
-        .modal-close:hover {
-            color: #800020;
-        }
-        
-        .modal-title {
-            font-size: 1.5rem;
-            color: #800020;
-            margin-bottom: 20px;
-            text-align: center;
-        }
-    </style>
 
     <script>
         // Основной скрипт для слайдера и AJAX отправки формы
@@ -1262,7 +1277,6 @@ if (!empty($_SESSION['generated_login']) && $justSaved) {
                     const login = document.getElementById('adminLogin').value;
                     const password = document.getElementById('adminPassword').value;
                     
-                    // Проверка учетных данных администратора
                     if (login === 'admin' && password === 'admin123') {
                         window.location.href = 'admin.php';
                     } else {
