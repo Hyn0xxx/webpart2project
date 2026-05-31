@@ -28,6 +28,60 @@ try {
 }
 
 // --------------------
+// СОЗДАНИЕ ТАБЛИЦ
+// --------------------
+
+$pdo->exec("
+    CREATE TABLE IF NOT EXISTS applications (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        full_name VARCHAR(255) NOT NULL,
+        phone VARCHAR(50) NOT NULL,
+        email VARCHAR(255) NOT NULL,
+        birth_date DATE NOT NULL,
+        gender ENUM('male', 'female', 'other') NOT NULL,
+        wish TEXT,
+        contract_accepted TINYINT(1) DEFAULT 0,
+        login VARCHAR(50) UNIQUE,
+        password_hash VARCHAR(255),
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )
+");
+
+$pdo->exec("
+    CREATE TABLE IF NOT EXISTS car_models (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        name VARCHAR(100) UNIQUE NOT NULL,
+        price VARCHAR(100) NOT NULL
+    )
+");
+
+$pdo->exec("
+    CREATE TABLE IF NOT EXISTS application_cars (
+        application_id INT,
+        car_id INT,
+        PRIMARY KEY (application_id, car_id),
+        FOREIGN KEY (application_id) REFERENCES applications(id) ON DELETE CASCADE,
+        FOREIGN KEY (car_id) REFERENCES car_models(id) ON DELETE CASCADE
+    )
+");
+
+// Добавляем автомобили, если их нет
+$cars = [
+    ['name' => 'Porsche Panamera', 'price' => 'от 9 500 000 ₽'],
+    ['name' => 'Mercedes-Benz S-Class', 'price' => 'от 12 000 000 ₽'],
+    ['name' => 'BMW 7 Series', 'price' => 'от 8 900 000 ₽'],
+    ['name' => 'Audi A8', 'price' => 'от 7 800 000 ₽'],
+    ['name' => 'Lexus LS', 'price' => 'от 7 500 000 ₽'],
+    ['name' => 'Tesla Model S', 'price' => 'от 6 500 000 ₽'],
+    ['name' => 'Jaguar XJ', 'price' => 'от 6 200 000 ₽'],
+    ['name' => 'Maserati Quattroporte', 'price' => 'от 10 500 000 ₽']
+];
+$stmt = $pdo->prepare("INSERT IGNORE INTO car_models (name, price) VALUES (?, ?)");
+foreach ($cars as $car) {
+    $stmt->execute([$car['name'], $car['price']]);
+}
+
+// --------------------
 // ФУНКЦИИ
 // --------------------
 
@@ -45,60 +99,16 @@ function generatePassword($length = 10) {
 }
 
 // --------------------
-// СОЗДАНИЕ ТАБЛИЦ
+// СПИСОК АВТОМОБИЛЕЙ
 // --------------------
 
-$pdo->exec("
-    CREATE TABLE IF NOT EXISTS applications (
-        id INT AUTO_INCREMENT PRIMARY KEY,
-        full_name VARCHAR(255) NOT NULL,
-        phone VARCHAR(50) NOT NULL,
-        email VARCHAR(255) NOT NULL,
-        birth_date DATE NOT NULL,
-        gender ENUM('male', 'female', 'other') NOT NULL,
-        bio TEXT,
-        contract_accepted TINYINT(1) DEFAULT 0,
-        login VARCHAR(50) UNIQUE,
-        password_hash VARCHAR(255),
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-    )
-");
-
-$pdo->exec("
-    CREATE TABLE IF NOT EXISTS programming_languages (
-        id INT AUTO_INCREMENT PRIMARY KEY,
-        name VARCHAR(100) UNIQUE NOT NULL
-    )
-");
-
-$pdo->exec("
-    CREATE TABLE IF NOT EXISTS application_languages (
-        application_id INT,
-        language_id INT,
-        PRIMARY KEY (application_id, language_id),
-        FOREIGN KEY (application_id) REFERENCES applications(id) ON DELETE CASCADE,
-        FOREIGN KEY (language_id) REFERENCES programming_languages(id) ON DELETE CASCADE
-    )
-");
-
-// Добавляем языки, если их нет
-$languages = ['PHP', 'Python', 'JavaScript', 'Java', 'C++', 'C#', 'Ruby', 'Go', 'Swift', 'Kotlin'];
-$stmt = $pdo->prepare("INSERT IGNORE INTO programming_languages (name) VALUES (?)");
-foreach ($languages as $lang) {
-    $stmt->execute([$lang]);
-}
-
-// --------------------
-// ЯЗЫКИ
-// --------------------
-
-$languagesList = $pdo->query("
-    SELECT id, name
-    FROM programming_languages
+$carsList = $pdo->query("
+    SELECT id, name, price
+    FROM car_models
     ORDER BY name
 ")->fetchAll();
 
-$allowedLanguageIds = array_column($languagesList, 'id');
+$allowedCarIds = array_column($carsList, 'id');
 
 // --------------------
 // ВЫХОД
@@ -145,146 +155,139 @@ if (isset($_POST['login_submit'])) {
 }
 
 // --------------------
-// ОБРАБОТКА ОСНОВНОЙ ФОРМЫ
+// ОБРАБОТКА ФОРМЫ
 // --------------------
 
 $justSaved = false;
-$ajaxResponse = null;
 
-// REST API endpoint
+// REST API endpoint для AJAX
 if ($_SERVER['REQUEST_METHOD'] == 'POST' && strpos($_SERVER['CONTENT_TYPE'] ?? '', 'application/json') !== false) {
     $input = json_decode(file_get_contents('php://input'), true);
     
     if ($input) {
-        $result = processFormData($input, $pdo, $languagesList, $allowedLanguageIds);
-        header('Content-Type: application/json');
-        echo json_encode($result);
-        exit();
-    }
-}
-
-function processFormData($data, $pdo, $languagesList, $allowedLanguageIds) {
-    $errors = [];
-    
-    // ФИО
-    if (empty($data['full_name']) || !preg_match('/^[a-zA-Zа-яА-ЯёЁ\s\-]+$/u', $data['full_name'])) {
-        $errors['full_name'] = 'ФИО обязательно и может содержать только буквы, пробелы и дефисы.';
-    }
-    
-    // ТЕЛЕФОН
-    if (empty($data['phone']) || !preg_match('/^(\+7|8)?[\s\-]?\(?[0-9]{3}\)?[\s\-]?[0-9]{3}[\s\-]?[0-9]{2}[\s\-]?[0-9]{2}$/', $data['phone'])) {
-        $errors['phone'] = 'Введите корректный номер телефона.';
-    }
-    
-    // EMAIL
-    if (empty($data['email']) || !filter_var($data['email'], FILTER_VALIDATE_EMAIL)) {
-        $errors['email'] = 'Введите корректный e-mail.';
-    }
-    
-    // ДАТА
-    if (empty($data['birth_date'])) {
-        $errors['birth_date'] = 'Выберите дату рождения.';
-    }
-    
-    // ПОЛ
-    if (empty($data['gender']) || !in_array($data['gender'], ['male', 'female', 'other'])) {
-        $errors['gender'] = 'Выберите пол.';
-    }
-    
-    // ЯЗЫКИ
-    $selectedLangs = $data['languages'] ?? [];
-    if (empty($selectedLangs)) {
-        $errors['languages'] = 'Выберите хотя бы один язык.';
-    }
-    foreach ($selectedLangs as $langId) {
-        if (!in_array($langId, $allowedLanguageIds)) {
-            $errors['languages'] = 'Выбран недопустимый язык.';
+        $errors = [];
+        
+        // ФИО
+        if (empty($input['full_name']) || !preg_match('/^[a-zA-Zа-яА-ЯёЁ\s\-]+$/u', $input['full_name'])) {
+            $errors['full_name'] = 'ФИО обязательно и может содержать только буквы, пробелы и дефисы.';
         }
-    }
-    
-    // CONTRACT
-    if (empty($data['contract'])) {
-        $errors['contract'] = 'Необходимо принять условия.';
-    }
-    
-    if (!empty($errors)) {
-        return ['success' => false, 'errors' => $errors];
-    }
-    
-    try {
-        $pdo->beginTransaction();
         
-        $isAuth = isset($_SESSION['user_id']);
+        // ТЕЛЕФОН
+        if (empty($input['phone']) || !preg_match('/^(\+7|8)?[\s\-]?\(?[0-9]{3}\)?[\s\-]?[0-9]{3}[\s\-]?[0-9]{2}[\s\-]?[0-9]{2}$/', $input['phone'])) {
+            $errors['phone'] = 'Введите корректный номер телефона.';
+        }
         
-        if ($isAuth) {
-            // UPDATE
-            $appId = $_SESSION['user_id'];
-            $stmt = $pdo->prepare("
-                UPDATE applications
-                SET full_name=?, phone=?, email=?, birth_date=?, gender=?, bio=?, contract_accepted=?
-                WHERE id=?
-            ");
-            $stmt->execute([
-                $data['full_name'],
-                $data['phone'],
-                $data['email'],
-                $data['birth_date'],
-                $data['gender'],
-                $data['bio'] ?? '',
-                1,
-                $appId
-            ]);
+        // EMAIL
+        if (empty($input['email']) || !filter_var($input['email'], FILTER_VALIDATE_EMAIL)) {
+            $errors['email'] = 'Введите корректный e-mail.';
+        }
+        
+        // ДАТА
+        if (empty($input['birth_date'])) {
+            $errors['birth_date'] = 'Выберите дату рождения.';
+        }
+        
+        // ПОЛ
+        if (empty($input['gender']) || !in_array($input['gender'], ['male', 'female', 'other'])) {
+            $errors['gender'] = 'Выберите пол.';
+        }
+        
+        // АВТОМОБИЛИ
+        $selectedCars = $input['cars'] ?? [];
+        if (empty($selectedCars)) {
+            $errors['cars'] = 'Выберите хотя бы один автомобиль.';
+        }
+        foreach ($selectedCars as $carId) {
+            if (!in_array($carId, $allowedCarIds)) {
+                $errors['cars'] = 'Выбран недопустимый автомобиль.';
+            }
+        }
+        
+        // CONTRACT
+        if (empty($input['contract'])) {
+            $errors['contract'] = 'Необходимо принять условия.';
+        }
+        
+        if (!empty($errors)) {
+            header('Content-Type: application/json');
+            echo json_encode(['success' => false, 'errors' => $errors]);
+            exit();
+        }
+        
+        try {
+            $pdo->beginTransaction();
             
-            $pdo->prepare("DELETE FROM application_languages WHERE application_id=?")->execute([$appId]);
-            $messages = ['✅ Данные успешно обновлены!'];
-        } else {
-            // INSERT
-            $login = generateLogin();
-            $plainPassword = generatePassword();
-            $passwordHash = password_hash($plainPassword, PASSWORD_DEFAULT);
+            $isAuth = isset($_SESSION['user_id']);
             
-            $stmt = $pdo->prepare("
-                INSERT INTO applications (full_name, phone, email, birth_date, gender, bio, contract_accepted, login, password_hash)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ");
-            $stmt->execute([
-                $data['full_name'],
-                $data['phone'],
-                $data['email'],
-                $data['birth_date'],
-                $data['gender'],
-                $data['bio'] ?? '',
-                1,
-                $login,
-                $passwordHash
-            ]);
-            $appId = $pdo->lastInsertId();
+            if ($isAuth) {
+                // UPDATE
+                $appId = $_SESSION['user_id'];
+                $stmt = $pdo->prepare("
+                    UPDATE applications
+                    SET full_name=?, phone=?, email=?, birth_date=?, gender=?, wish=?, contract_accepted=?
+                    WHERE id=?
+                ");
+                $stmt->execute([
+                    $input['full_name'],
+                    $input['phone'],
+                    $input['email'],
+                    $input['birth_date'],
+                    $input['gender'],
+                    $input['wish'] ?? '',
+                    1,
+                    $appId
+                ]);
+                
+                $pdo->prepare("DELETE FROM application_cars WHERE application_id=?")->execute([$appId]);
+                $response = ['success' => true, 'messages' => ['✅ Данные успешно обновлены!'], 'updated' => true];
+            } else {
+                // INSERT
+                $login = generateLogin();
+                $plainPassword = generatePassword();
+                $passwordHash = password_hash($plainPassword, PASSWORD_DEFAULT);
+                
+                $stmt = $pdo->prepare("
+                    INSERT INTO applications (full_name, phone, email, birth_date, gender, wish, contract_accepted, login, password_hash)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ");
+                $stmt->execute([
+                    $input['full_name'],
+                    $input['phone'],
+                    $input['email'],
+                    $input['birth_date'],
+                    $input['gender'],
+                    $input['wish'] ?? '',
+                    1,
+                    $login,
+                    $passwordHash
+                ]);
+                $appId = $pdo->lastInsertId();
+                
+                $response = [
+                    'success' => true, 
+                    'messages' => ['✅ Заявка успешно отправлена!'],
+                    'credentials' => ['login' => $login, 'password' => $plainPassword]
+                ];
+            }
             
-            $messages = ['✅ Данные успешно сохранены!'];
-            $credentials = ['login' => $login, 'password' => $plainPassword];
+            // Сохраняем выбранные автомобили
+            $stmtCar = $pdo->prepare("INSERT INTO application_cars (application_id, car_id) VALUES (?, ?)");
+            foreach ($selectedCars as $carId) {
+                $stmtCar->execute([$appId, $carId]);
+            }
+            
+            $pdo->commit();
+            
+            header('Content-Type: application/json');
+            echo json_encode($response);
+            exit();
+            
+        } catch(PDOException $e) {
+            $pdo->rollBack();
+            header('Content-Type: application/json');
+            echo json_encode(['success' => false, 'errors' => ['db_error' => 'Ошибка БД: ' . $e->getMessage()]]);
+            exit();
         }
-        
-        // Сохраняем языки
-        $stmtLang = $pdo->prepare("INSERT INTO application_languages (application_id, language_id) VALUES (?, ?)");
-        foreach ($selectedLangs as $langId) {
-            $stmtLang->execute([$appId, $langId]);
-        }
-        
-        $pdo->commit();
-        
-        $result = ['success' => true, 'messages' => $messages];
-        if (isset($credentials)) {
-            $result['credentials'] = $credentials;
-        }
-        if ($isAuth) {
-            $result['updated'] = true;
-        }
-        
-        return $result;
-        
-    } catch(PDOException $e) {
-        $pdo->rollBack();
-        return ['success' => false, 'errors' => ['db_error' => 'Ошибка БД: ' . $e->getMessage()]];
     }
 }
 
@@ -317,14 +320,14 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && !isset($_POST['login_submit'])) {
         $errors['gender'] = 'Выберите пол.';
     }
     
-    // ЯЗЫКИ
-    $selectedLangs = $_POST['languages'] ?? [];
-    if (empty($selectedLangs)) {
-        $errors['languages'] = 'Выберите хотя бы один язык.';
+    // АВТОМОБИЛИ
+    $selectedCars = $_POST['cars'] ?? [];
+    if (empty($selectedCars)) {
+        $errors['cars'] = 'Выберите хотя бы один автомобиль.';
     }
-    foreach ($selectedLangs as $langId) {
-        if (!in_array($langId, $allowedLanguageIds)) {
-            $errors['languages'] = 'Выбран недопустимый язык.';
+    foreach ($selectedCars as $carId) {
+        if (!in_array($carId, $allowedCarIds)) {
+            $errors['cars'] = 'Выбран недопустимый автомобиль.';
         }
     }
     
@@ -340,22 +343,20 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && !isset($_POST['login_submit'])) {
         'email' => $_POST['email'] ?? '',
         'birth_date' => $_POST['birth_date'] ?? '',
         'gender' => $_POST['gender'] ?? '',
-        'bio' => $_POST['bio'] ?? '',
+        'wish' => $_POST['wish'] ?? '',
         'contract' => isset($_POST['contract']),
-        'languages' => $selectedLangs
+        'cars' => $selectedCars
     ];
     
-    // ЕСЛИ НЕТ ОШИБОК - СОХРАНЯЕМ
     if (empty($errors)) {
         try {
             $pdo->beginTransaction();
             
-            // UPDATE (если пользователь авторизован)
             if (isset($_SESSION['user_id'])) {
                 $appId = $_SESSION['user_id'];
                 $stmt = $pdo->prepare("
                     UPDATE applications
-                    SET full_name=?, phone=?, email=?, birth_date=?, gender=?, bio=?, contract_accepted=?
+                    SET full_name=?, phone=?, email=?, birth_date=?, gender=?, wish=?, contract_accepted=?
                     WHERE id=?
                 ");
                 $stmt->execute([
@@ -364,21 +365,20 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && !isset($_POST['login_submit'])) {
                     $_POST['email'],
                     $_POST['birth_date'],
                     $_POST['gender'],
-                    $_POST['bio'],
+                    $_POST['wish'],
                     1,
                     $appId
                 ]);
                 
-                $pdo->prepare("DELETE FROM application_languages WHERE application_id=?")->execute([$appId]);
+                $pdo->prepare("DELETE FROM application_cars WHERE application_id=?")->execute([$appId]);
                 $messages[] = '✅ Данные успешно обновлены!';
             } else {
-                // INSERT (новая анкета)
                 $login = generateLogin();
                 $plainPassword = generatePassword();
                 $passwordHash = password_hash($plainPassword, PASSWORD_DEFAULT);
                 
                 $stmt = $pdo->prepare("
-                    INSERT INTO applications (full_name, phone, email, birth_date, gender, bio, contract_accepted, login, password_hash)
+                    INSERT INTO applications (full_name, phone, email, birth_date, gender, wish, contract_accepted, login, password_hash)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ");
                 $stmt->execute([
@@ -387,7 +387,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && !isset($_POST['login_submit'])) {
                     $_POST['email'],
                     $_POST['birth_date'],
                     $_POST['gender'],
-                    $_POST['bio'],
+                    $_POST['wish'],
                     1,
                     $login,
                     $passwordHash
@@ -398,13 +398,12 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && !isset($_POST['login_submit'])) {
                 $_SESSION['generated_password'] = $plainPassword;
                 $justSaved = true;
                 
-                $messages[] = '✅ Данные успешно сохранены!';
+                $messages[] = '✅ Заявка успешно отправлена!';
             }
             
-            // Сохраняем языки
-            $stmtLang = $pdo->prepare("INSERT INTO application_languages (application_id, language_id) VALUES (?, ?)");
-            foreach ($selectedLangs as $langId) {
-                $stmtLang->execute([$appId, $langId]);
+            $stmtCar = $pdo->prepare("INSERT INTO application_cars (application_id, car_id) VALUES (?, ?)");
+            foreach ($selectedCars as $carId) {
+                $stmtCar->execute([$appId, $carId]);
             }
             
             $pdo->commit();
@@ -420,12 +419,10 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && !isset($_POST['login_submit'])) {
 // ЗАГРУЗКА ДАННЫХ ДЛЯ ФОРМЫ
 // --------------------
 
-// Если есть отправленные значения из формы (при ошибке)
 if (isset($formValues)) {
     $values = $formValues;
     $errors = $errors ?? [];
 } 
-// Если пользователь авторизован, загружаем его данные из БД
 elseif (isset($_SESSION['user_id'])) {
     $stmt = $pdo->prepare("SELECT * FROM applications WHERE id=?");
     $stmt->execute([$_SESSION['user_id']]);
@@ -437,15 +434,14 @@ elseif (isset($_SESSION['user_id'])) {
         $values['email'] = $userData['email'];
         $values['birth_date'] = $userData['birth_date'];
         $values['gender'] = $userData['gender'];
-        $values['bio'] = $userData['bio'];
+        $values['wish'] = $userData['wish'];
         $values['contract'] = $userData['contract_accepted'];
         
-        $stmt = $pdo->prepare("SELECT language_id FROM application_languages WHERE application_id=?");
+        $stmt = $pdo->prepare("SELECT car_id FROM application_cars WHERE application_id=?");
         $stmt->execute([$_SESSION['user_id']]);
-        $values['languages'] = array_column($stmt->fetchAll(), 'language_id');
+        $values['cars'] = array_column($stmt->fetchAll(), 'car_id');
     }
 } 
-// Пустая форма для нового пользователя
 else {
     $values = [
         'full_name' => '',
@@ -453,14 +449,13 @@ else {
         'email' => '',
         'birth_date' => '',
         'gender' => '',
-        'bio' => '',
+        'wish' => '',
         'contract' => false,
-        'languages' => []
+        'cars' => []
     ];
     $errors = [];
 }
 
-// Добавляем сообщение с логином и паролем
 if (!empty($_SESSION['generated_login']) && $justSaved) {
     $loginMessage = "✅ Ваши данные для входа:<br><br>
         Логин: <b>" . htmlspecialchars($_SESSION['generated_login']) . "</b><br>
@@ -482,13 +477,13 @@ if (!empty($_SESSION['generated_login']) && $justSaved) {
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&family=Open+Sans:wght@400;600;700&display=swap" rel="stylesheet">
     <style>
-        /* Дополнительные стили для формы анкеты */
-        .developer-form-section {
+        /* Дополнительные стили для формы заказа */
+        .order-form-section {
             background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
             padding: 80px 0;
         }
         
-        .developer-form-container {
+        .order-form-container {
             max-width: 800px;
             margin: 0 auto;
             background: white;
@@ -497,48 +492,48 @@ if (!empty($_SESSION['generated_login']) && $justSaved) {
             overflow: hidden;
         }
         
-        .developer-form-header {
+        .order-form-header {
             background: #800020;
             color: white;
             padding: 30px;
             text-align: center;
         }
         
-        .developer-form-header h2 {
+        .order-form-header h2 {
             font-size: 1.8em;
             margin-bottom: 10px;
         }
         
-        .developer-form-body {
+        .order-form-body {
             padding: 40px;
         }
         
-        .auth-section-dev {
+        .auth-section {
             background: #9E9E9E;
             padding: 25px;
             border-radius: 15px;
             margin-bottom: 30px;
         }
         
-        .auth-section-dev h3 {
+        .auth-section h3 {
             color: #800020;
             margin-bottom: 20px;
         }
         
-        .form-group-dev {
+        .form-group {
             margin-bottom: 20px;
         }
         
-        .form-group-dev label {
+        .form-group label {
             display: block;
             margin-bottom: 8px;
             font-weight: 600;
             color: #333;
         }
         
-        .form-group-dev input,
-        .form-group-dev select,
-        .form-group-dev textarea {
+        .form-group input,
+        .form-group select,
+        .form-group textarea {
             width: 100%;
             padding: 12px 15px;
             border: 2px solid #e0e0e0;
@@ -547,25 +542,25 @@ if (!empty($_SESSION['generated_login']) && $justSaved) {
             transition: all 0.3s;
         }
         
-        .form-group-dev input:focus,
-        .form-group-dev select:focus,
-        .form-group-dev textarea:focus {
+        .form-group input:focus,
+        .form-group select:focus,
+        .form-group textarea:focus {
             outline: none;
             border-color: #9E9E9E;
             box-shadow: 0 0 0 3px rgba(158,158,158,0.3);
         }
         
-        .form-group-dev select[multiple] {
-            height: 120px;
+        .form-group select[multiple] {
+            height: 150px;
         }
         
-        .radio-group-dev {
+        .radio-group {
             display: flex;
             gap: 20px;
             padding: 10px 0;
         }
         
-        .radio-group-dev label {
+        .radio-group label {
             display: inline-flex;
             align-items: center;
             font-weight: normal;
@@ -573,23 +568,23 @@ if (!empty($_SESSION['generated_login']) && $justSaved) {
             cursor: pointer;
         }
         
-        .radio-group-dev input {
+        .radio-group input {
             width: auto;
             margin-right: 8px;
         }
         
-        .checkbox-label-dev {
+        .checkbox-label {
             display: flex;
             align-items: center;
             cursor: pointer;
         }
         
-        .checkbox-label-dev input {
+        .checkbox-label input {
             width: auto;
             margin-right: 10px;
         }
         
-        .btn-submit-dev {
+        .btn-submit {
             background: #800020;
             color: white;
             border: none;
@@ -602,20 +597,20 @@ if (!empty($_SESSION['generated_login']) && $justSaved) {
             width: 100%;
         }
         
-        .btn-submit-dev:hover {
+        .btn-submit:hover {
             background: #9E9E9E;
             color: #800020;
             transform: translateY(-2px);
         }
         
-        .error-message-dev {
+        .error-message {
             color: #dc3545;
             font-size: 0.85em;
             margin-top: 5px;
             display: block;
         }
         
-        .success-message-dev {
+        .success-message {
             background: #d4edda;
             color: #155724;
             padding: 15px;
@@ -624,11 +619,11 @@ if (!empty($_SESSION['generated_login']) && $justSaved) {
             border-left: 4px solid #28a745;
         }
         
-        .form-error-dev {
+        .form-error {
             border-color: #dc3545 !important;
         }
         
-        .logout-link-dev {
+        .logout-link {
             display: inline-block;
             margin-top: 10px;
             color: #800020;
@@ -636,8 +631,33 @@ if (!empty($_SESSION['generated_login']) && $justSaved) {
             font-weight: 600;
         }
         
-        .logout-link-dev:hover {
+        .logout-link:hover {
             text-decoration: underline;
+        }
+        
+        .admin-link {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            background: #800020;
+            color: white;
+            padding: 12px 20px;
+            border-radius: 30px;
+            text-decoration: none;
+            font-weight: 600;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.2);
+            transition: all 0.3s;
+            z-index: 1000;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .admin-link:hover {
+            background: #9E9E9E;
+            color: #800020;
+            transform: translateY(-3px);
+            box-shadow: 0 8px 25px rgba(0,0,0,0.3);
         }
         
         hr {
@@ -648,13 +668,18 @@ if (!empty($_SESSION['generated_login']) && $justSaved) {
         }
         
         @media (max-width: 768px) {
-            .developer-form-body {
+            .order-form-body {
                 padding: 20px;
             }
             
-            .radio-group-dev {
+            .radio-group {
                 flex-direction: column;
                 gap: 10px;
+            }
+            
+            .admin-link {
+                padding: 8px 15px;
+                font-size: 0.9em;
             }
         }
     </style>
@@ -693,7 +718,7 @@ if (!empty($_SESSION['generated_login']) && $justSaved) {
                     <li><a href="#services">Услуги</a></li>
                     <li><a href="#about">О нас</a></li>
                     <li><a href="#contacts">Контакты</a></li>
-                    <li><a href="#developer-form" class="btn-contact">Стать разработчиком</a></li>
+                    <li><a href="#order-form" class="btn-contact">Заказать авто</a></li>
                 </ul>
                 
                 <div class="mobile-menu-btn" id="mobileMenuBtn">
@@ -715,7 +740,7 @@ if (!empty($_SESSION['generated_login']) && $justSaved) {
                 <li><a href="#services">Услуги</a></li>
                 <li><a href="#about">О нас</a></li>
                 <li><a href="#contacts">Контакты</a></li>
-                <li><a href="#developer-form">Стать разработчиком</a></li>
+                <li><a href="#order-form">Заказать авто</a></li>
             </ul>
         </div>
         
@@ -745,7 +770,7 @@ if (!empty($_SESSION['generated_login']) && $justSaved) {
                                 <h3>Porsche Panamera</h3>
                                 <p class="slide-description">Спортивная элегантность и мощность</p>
                                 <p class="slide-price">от 9 500 000 ₽</p>
-                                <a href="#developer-form" class="btn-order">Заказать</a>
+                                <a href="#order-form" class="btn-order">Заказать</a>
                             </div>
                         </div>
                         
@@ -758,7 +783,7 @@ if (!empty($_SESSION['generated_login']) && $justSaved) {
                                 <h3>Mercedes-Benz S-Class</h3>
                                 <p class="slide-description">Роскошь и инновации</p>
                                 <p class="slide-price">от 12 000 000 ₽</p>
-                                <a href="#developer-form" class="btn-order">Заказать</a>
+                                <a href="#order-form" class="btn-order">Заказать</a>
                             </div>
                         </div>
                         
@@ -771,7 +796,7 @@ if (!empty($_SESSION['generated_login']) && $justSaved) {
                                 <h3>BMW 7 Series</h3>
                                 <p class="slide-description">Динамика и комфорт</p>
                                 <p class="slide-price">от 8 900 000 ₽</p>
-                                <a href="#developer-form" class="btn-order">Заказать</a>
+                                <a href="#order-form" class="btn-order">Заказать</a>
                             </div>
                         </div>
                     </div>
@@ -837,84 +862,84 @@ if (!empty($_SESSION['generated_login']) && $justSaved) {
             </div>
         </section>
 
-        <!-- Форма для разработчиков (анкета) -->
-        <section class="developer-form-section" id="developer-form">
+        <!-- Форма заказа автомобиля -->
+        <section class="order-form-section" id="order-form">
             <div class="container">
-                <div class="developer-form-container">
-                    <div class="developer-form-header">
-                        <h2>📝 Анкета разработчика</h2>
-                        <p>Заполните форму, чтобы стать частью нашей команды</p>
+                <div class="order-form-container">
+                    <div class="order-form-header">
+                        <h2>🚗 Оставить заявку на автомобиль</h2>
+                        <p>Заполните форму, и мы свяжемся с вами в ближайшее время</p>
                     </div>
                     
-                    <div class="developer-form-body">
+                    <div class="order-form-body">
                         <div id="ajaxMessages"></div>
                         
                         <?php foreach($messages as $m): ?>
-                            <div class="success-message-dev"><?= $m ?></div>
+                            <div class="success-message"><?= $m ?></div>
                         <?php endforeach; ?>
                         <?php if (!empty($errors['db_error'])): ?>
-                            <div class="success-message-dev" style="background:#f8d7da; color:#721c24;"><?= $errors['db_error'] ?></div>
+                            <div class="success-message" style="background:#f8d7da; color:#721c24;"><?= $errors['db_error'] ?></div>
                         <?php endif; ?>
                         
                         <!-- АВТОРИЗАЦИЯ -->
                         <?php if (!isset($_SESSION['user_id'])): ?>
-                            <div class="auth-section-dev" id="authSection">
-                                <h3>🔐 Авторизация для редактирования</h3>
+                            <div class="auth-section" id="authSection">
+                                <h3>🔐 Авторизация для редактирования заявки</h3>
                                 <?php if (!empty($loginError)): ?>
-                                    <div class="error-message-dev"><?= $loginError ?></div>
+                                    <div class="error-message"><?= $loginError ?></div>
                                 <?php endif; ?>
                                 
                                 <form method="POST" id="loginForm">
-                                    <div class="form-group-dev">
+                                    <div class="form-group">
                                         <label>Логин</label>
-                                        <input type="text" name="login" id="loginInput" class="<?= !empty($loginError) ? 'form-error-dev' : '' ?>">
+                                        <input type="text" name="login" id="loginInput" class="<?= !empty($loginError) ? 'form-error' : '' ?>">
                                     </div>
                                     
-                                    <div class="form-group-dev">
+                                    <div class="form-group">
                                         <label>Пароль</label>
-                                        <input type="password" name="password" id="passwordInput" class="<?= !empty($loginError) ? 'form-error-dev' : '' ?>">
+                                        <input type="password" name="password" id="passwordInput" class="<?= !empty($loginError) ? 'form-error' : '' ?>">
                                     </div>
                                     
-                                    <button type="submit" name="login_submit" class="btn-submit-dev">Войти</button>
+                                    <button type="submit" name="login_submit" class="btn-submit">Войти</button>
                                 </form>
                             </div>
                             <hr>
                         <?php else: ?>
-                            <div class="success-message-dev" id="userInfo">
+                            <div class="success-message" id="userInfo">
                                 ✅ Вы авторизованы как <?= htmlspecialchars($values['full_name']) ?>
-                                <a href="?logout=1" class="logout-link-dev">Выйти</a>
+                                <a href="?logout=1" class="logout-link">Выйти</a>
                             </div>
                         <?php endif; ?>
                         
                         <!-- ОСНОВНАЯ ФОРМА -->
-                        <form method="POST" id="developerForm">
-                            <div class="form-group-dev">
+                        <form method="POST" id="orderForm">
+                            <div class="form-group">
                                 <label>ФИО *</label>
-                                <input type="text" name="full_name" id="full_name" value="<?= htmlspecialchars($values['full_name'] ?? '') ?>" class="<?= isset($errors['full_name']) ? 'form-error-dev' : '' ?>">
-                                <div class="error-message-dev" id="full_name_error"><?= $errors['full_name'] ?? '' ?></div>
+                                <input type="text" name="full_name" id="full_name" value="<?= htmlspecialchars($values['full_name'] ?? '') ?>" class="<?= isset($errors['full_name']) ? 'form-error' : '' ?>">
+                                <div class="error-message" id="full_name_error"><?= $errors['full_name'] ?? '' ?></div>
                             </div>
                             
-                            <div class="form-group-dev">
+                            <div class="form-group">
                                 <label>Телефон *</label>
-                                <input type="tel" name="phone" id="phone" value="<?= htmlspecialchars($values['phone'] ?? '') ?>" class="<?= isset($errors['phone']) ? 'form-error-dev' : '' ?>">
-                                <div class="error-message-dev" id="phone_error"><?= $errors['phone'] ?? '' ?></div>
+                                <input type="tel" name="phone" id="phone" value="<?= htmlspecialchars($values['phone'] ?? '') ?>" class="<?= isset($errors['phone']) ? 'form-error' : '' ?>">
+                                <div class="error-message" id="phone_error"><?= $errors['phone'] ?? '' ?></div>
                             </div>
                             
-                            <div class="form-group-dev">
+                            <div class="form-group">
                                 <label>E-mail *</label>
-                                <input type="email" name="email" id="email" value="<?= htmlspecialchars($values['email'] ?? '') ?>" class="<?= isset($errors['email']) ? 'form-error-dev' : '' ?>">
-                                <div class="error-message-dev" id="email_error"><?= $errors['email'] ?? '' ?></div>
+                                <input type="email" name="email" id="email" value="<?= htmlspecialchars($values['email'] ?? '') ?>" class="<?= isset($errors['email']) ? 'form-error' : '' ?>">
+                                <div class="error-message" id="email_error"><?= $errors['email'] ?? '' ?></div>
                             </div>
                             
-                            <div class="form-group-dev">
+                            <div class="form-group">
                                 <label>Дата рождения *</label>
-                                <input type="date" name="birth_date" id="birth_date" value="<?= htmlspecialchars($values['birth_date'] ?? '') ?>" class="<?= isset($errors['birth_date']) ? 'form-error-dev' : '' ?>">
-                                <div class="error-message-dev" id="birth_date_error"><?= $errors['birth_date'] ?? '' ?></div>
+                                <input type="date" name="birth_date" id="birth_date" value="<?= htmlspecialchars($values['birth_date'] ?? '') ?>" class="<?= isset($errors['birth_date']) ? 'form-error' : '' ?>">
+                                <div class="error-message" id="birth_date_error"><?= $errors['birth_date'] ?? '' ?></div>
                             </div>
                             
-                            <div class="form-group-dev">
+                            <div class="form-group">
                                 <label>Пол *</label>
-                                <div class="radio-group-dev">
+                                <div class="radio-group">
                                     <label>
                                         <input type="radio" name="gender" value="male" <?= (($values['gender'] ?? '') == 'male') ? 'checked' : '' ?>> Мужской
                                     </label>
@@ -925,99 +950,46 @@ if (!empty($_SESSION['generated_login']) && $justSaved) {
                                         <input type="radio" name="gender" value="other" <?= (($values['gender'] ?? '') == 'other') ? 'checked' : '' ?>> Другой
                                     </label>
                                 </div>
-                                <div class="error-message-dev" id="gender_error"><?= $errors['gender'] ?? '' ?></div>
+                                <div class="error-message" id="gender_error"><?= $errors['gender'] ?? '' ?></div>
                             </div>
                             
-                            <div class="form-group-dev">
-                                <label>Любимые языки программирования *</label>
-                                <select name="languages[]" id="languages" multiple>
-                                    <?php foreach ($languagesList as $lang): ?>
-                                        <option value="<?= $lang['id'] ?>" <?= in_array($lang['id'], $values['languages'] ?? []) ? 'selected' : '' ?>>
-                                            <?= htmlspecialchars($lang['name']) ?>
+                            <div class="form-group">
+                                <label>Интересующие автомобили * (можно выбрать несколько)</label>
+                                <select name="cars[]" id="cars" multiple class="<?= isset($errors['cars']) ? 'form-error' : '' ?>">
+                                    <?php foreach ($carsList as $car): ?>
+                                        <option value="<?= $car['id'] ?>" <?= in_array($car['id'], $values['cars'] ?? []) ? 'selected' : '' ?>>
+                                            <?= htmlspecialchars($car['name']) ?> - <?= htmlspecialchars($car['price']) ?>
                                         </option>
                                     <?php endforeach; ?>
                                 </select>
-                                <div class="error-message-dev" id="languages_error"><?= $errors['languages'] ?? '' ?></div>
+                                <div class="error-message" id="cars_error"><?= $errors['cars'] ?? '' ?></div>
                             </div>
                             
-                            <div class="form-group-dev">
-                                <label>Биография</label>
-                                <textarea name="bio" id="bio"><?= htmlspecialchars($values['bio'] ?? '') ?></textarea>
+                            <div class="form-group">
+                                <label>Пожелания к заказу</label>
+                                <textarea name="wish" id="wish" rows="4" placeholder="Цвет, комплектация, дополнительные опции..."><?= htmlspecialchars($values['wish'] ?? '') ?></textarea>
                             </div>
                             
-                            <div class="form-group-dev">
-                                <label class="checkbox-label-dev">
+                            <div class="form-group">
+                                <label class="checkbox-label">
                                     <input type="checkbox" name="contract" value="1" id="contract" <?= !empty($values['contract']) ? 'checked' : '' ?>>
                                     Я согласен с условиями обработки данных *
                                 </label>
-                                <div class="error-message-dev" id="contract_error"><?= $errors['contract'] ?? '' ?></div>
+                                <div class="error-message" id="contract_error"><?= $errors['contract'] ?? '' ?></div>
                             </div>
                             
-                            <button type="submit" class="btn-submit-dev" id="formSubmitBtn">
-                                <?= isset($_SESSION['user_id']) ? '✏️ Обновить анкету' : '✉️ Отправить анкету' ?>
+                            <button type="submit" class="btn-submit" id="formSubmitBtn">
+                                <?= isset($_SESSION['user_id']) ? '✏️ Обновить заявку' : '🚗 Отправить заявку' ?>
                             </button>
                         </form>
                         
                         <?php if (!isset($_SESSION['user_id'])): ?>
                             <p style="margin-top: 20px; text-align: center; color: #666; font-size: 0.85em;">
-                                * После отправки анкеты вы получите логин и пароль для редактирования данных
+                                * После отправки заявки вы получите логин и пароль для редактирования данных
                             </p>
                         <?php endif; ?>
                     </div>
                 </div>
-            </div>
-        </section>
-
-        <section class="contact-form-section" id="form">
-            <div class="container">
-                <h2 class="section-title">Оставить заявку</h2>
-                <p class="section-subtitle">Мы перезвоним вам в течение 15 минут</p>
-                
-                <form id="contactForm" class="contact-form">
-                    <div class="form-group">
-                        <label for="contactName">Имя *</label>
-                        <input type="text" id="contactName" name="name" required>
-                    </div>
-                    
-                    <div class="form-group">
-                        <label for="contactPhone">Телефон *</label>
-                        <input type="tel" id="contactPhone" name="phone" required>
-                    </div>
-                    
-                    <div class="form-group">
-                        <label for="contactEmail">Email *</label>
-                        <input type="email" id="contactEmail" name="email" required>
-                    </div>
-                    
-                    <div class="form-group">
-                        <label for="contactCar">Интересующий автомобиль</label>
-                        <select id="contactCar" name="car">
-                            <option value="">Выберите модель</option>
-                            <option value="porsche-panamera">Porsche Panamera</option>
-                            <option value="mercedes-s-class">Mercedes-Benz S-Class</option>
-                            <option value="bmw-7-series">BMW 7 Series</option>
-                            <option value="audi-a8">Audi A8</option>
-                            <option value="lexus-ls">Lexus LS</option>
-                        </select>
-                    </div>
-                    
-                    <div class="form-group">
-                        <label for="contactMessage">Сообщение</label>
-                        <textarea id="contactMessage" name="message" placeholder="Ваши пожелания и вопросы..."></textarea>
-                    </div>
-                    
-                    <div class="form-checkbox">
-                        <input type="checkbox" id="contactPrivacy" name="privacy" required>
-                        <label for="contactPrivacy">Согласен на обработку персональных данных</label>
-                    </div>
-                    
-                    <button type="submit" class="btn-submit" id="contactSubmitBtn">
-                        <span>Отправить заявку</span>
-                        <div class="spinner hidden" id="contactSpinner"></div>
-                    </button>
-                    
-                    <div id="contactFormMessage" class="form-message hidden"></div>
-                </form>
             </div>
         </section>
 
@@ -1052,23 +1024,102 @@ if (!empty($_SESSION['generated_login']) && $justSaved) {
                 
                 <div class="footer-bottom">
                     <p>&copy; 2024 AutoElite. Все права защищены.</p>
-                    <p><a href="admin.php" style="color: #800020; text-decoration: none;">🔐 Администратору</a></p>
                 </div>
             </div>
         </footer>
     </main>
+    
+    <!-- Кнопка для администратора (SSH-like подключение) -->
+    <div class="admin-link" id="adminBtn">
+        <i class="fas fa-shield-alt"></i> Администратору
+    </div>
 
-    <div class="modal-overlay hidden" id="modalOverlay">
-        <div class="modal" id="modal">
+    <!-- Модальное окно для входа в админку -->
+    <div class="modal-overlay hidden" id="adminModal">
+        <div class="modal">
             <button class="modal-close" id="modalClose">
                 <i class="fas fa-times"></i>
             </button>
-            <h2 class="modal-title">Связь с нами</h2>
+            <h2 class="modal-title">🔐 Доступ администратора</h2>
+            <form id="adminLoginForm">
+                <div class="form-group">
+                    <label>Логин администратора</label>
+                    <input type="text" id="adminLogin" placeholder="Введите логин" required>
+                </div>
+                <div class="form-group">
+                    <label>Пароль администратора</label>
+                    <input type="password" id="adminPassword" placeholder="Введите пароль" required>
+                </div>
+                <button type="submit" class="btn-submit">Войти в админ-панель</button>
+                <div id="adminError" class="error-message" style="margin-top: 15px; text-align: center;"></div>
+            </form>
         </div>
     </div>
 
+    <style>
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.7);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 2000;
+        }
+        
+        .modal-overlay.hidden {
+            display: none;
+        }
+        
+        .modal {
+            background: white;
+            width: 90%;
+            max-width: 450px;
+            border-radius: 20px;
+            padding: 30px;
+            position: relative;
+            animation: modalAppear 0.3s ease;
+        }
+        
+        @keyframes modalAppear {
+            from {
+                opacity: 0;
+                transform: translateY(-50px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+        
+        .modal-close {
+            position: absolute;
+            top: 15px;
+            right: 15px;
+            background: none;
+            border: none;
+            font-size: 1.5rem;
+            color: #999;
+            cursor: pointer;
+        }
+        
+        .modal-close:hover {
+            color: #800020;
+        }
+        
+        .modal-title {
+            font-size: 1.5rem;
+            color: #800020;
+            margin-bottom: 20px;
+            text-align: center;
+        }
+    </style>
+
     <script>
-        // Основной скрипт для слайдера и AJAX отправки формы анкеты
+        // Основной скрипт для слайдера и AJAX отправки формы
         document.addEventListener('DOMContentLoaded', function() {
             // Слайдер
             const slider = document.querySelector('.slider');
@@ -1177,15 +1228,58 @@ if (!empty($_SESSION['generated_login']) && $justSaved) {
             
             updateSlider();
             
-            // -------------------- AJAX ОТПРАВКА ФОРМЫ АНКЕТЫ --------------------
-            const developerForm = document.getElementById('developerForm');
+            // -------------------- АДМИН МОДАЛЬНОЕ ОКНО --------------------
+            const adminBtn = document.getElementById('adminBtn');
+            const adminModal = document.getElementById('adminModal');
+            const modalClose = document.getElementById('modalClose');
+            const adminLoginForm = document.getElementById('adminLoginForm');
+            const adminError = document.getElementById('adminError');
+            
+            if (adminBtn) {
+                adminBtn.addEventListener('click', function() {
+                    adminModal.classList.remove('hidden');
+                    document.body.style.overflow = 'hidden';
+                });
+            }
+            
+            if (modalClose) {
+                modalClose.addEventListener('click', function() {
+                    adminModal.classList.add('hidden');
+                    document.body.style.overflow = '';
+                });
+            }
+            
+            adminModal?.addEventListener('click', function(e) {
+                if (e.target === adminModal) {
+                    adminModal.classList.add('hidden');
+                    document.body.style.overflow = '';
+                }
+            });
+            
+            if (adminLoginForm) {
+                adminLoginForm.addEventListener('submit', function(e) {
+                    e.preventDefault();
+                    const login = document.getElementById('adminLogin').value;
+                    const password = document.getElementById('adminPassword').value;
+                    
+                    // Проверка учетных данных администратора
+                    if (login === 'admin' && password === 'admin123') {
+                        window.location.href = 'admin.php';
+                    } else {
+                        adminError.textContent = 'Неверный логин или пароль администратора';
+                    }
+                });
+            }
+            
+            // -------------------- AJAX ОТПРАВКА ФОРМЫ --------------------
+            const orderForm = document.getElementById('orderForm');
             const formSubmitBtn = document.getElementById('formSubmitBtn');
             const ajaxMessages = document.getElementById('ajaxMessages');
             
             function clearErrors() {
-                document.querySelectorAll('.error-message-dev').forEach(el => el.innerHTML = '');
-                document.querySelectorAll('.form-group-dev input, .form-group-dev select, .form-group-dev textarea').forEach(el => {
-                    el.classList.remove('form-error-dev');
+                document.querySelectorAll('.error-message').forEach(el => el.innerHTML = '');
+                document.querySelectorAll('.form-group input, .form-group select, .form-group textarea').forEach(el => {
+                    el.classList.remove('form-error');
                 });
             }
             
@@ -1197,15 +1291,15 @@ if (!empty($_SESSION['generated_login']) && $justSaved) {
                     }
                     const inputEl = document.getElementById(field);
                     if (inputEl) {
-                        inputEl.classList.add('form-error-dev');
+                        inputEl.classList.add('form-error');
                     }
-                    if (field === 'languages') {
-                        const selectEl = document.getElementById('languages');
-                        if (selectEl) selectEl.classList.add('form-error-dev');
+                    if (field === 'cars') {
+                        const selectEl = document.getElementById('cars');
+                        if (selectEl) selectEl.classList.add('form-error');
                     }
                     if (field === 'contract') {
                         const contractEl = document.getElementById('contract');
-                        if (contractEl) contractEl.classList.add('form-error-dev');
+                        if (contractEl) contractEl.classList.add('form-error');
                     }
                 }
             }
@@ -1213,7 +1307,7 @@ if (!empty($_SESSION['generated_login']) && $justSaved) {
             function showMessage(message, isSuccess = true) {
                 if (ajaxMessages) {
                     const msgDiv = document.createElement('div');
-                    msgDiv.className = isSuccess ? 'success-message-dev' : 'success-message-dev';
+                    msgDiv.className = isSuccess ? 'success-message' : 'success-message';
                     msgDiv.style.cssText = isSuccess ? '' : 'background:#f8d7da; color:#721c24;';
                     msgDiv.innerHTML = message;
                     ajaxMessages.appendChild(msgDiv);
@@ -1221,25 +1315,25 @@ if (!empty($_SESSION['generated_login']) && $justSaved) {
                 }
             }
             
-            if (developerForm) {
-                developerForm.addEventListener('submit', async function(e) {
+            if (orderForm) {
+                orderForm.addEventListener('submit', async function(e) {
                     e.preventDefault();
                     clearErrors();
                     if (ajaxMessages) ajaxMessages.innerHTML = '';
                     
-                    const formData = new FormData(developerForm);
+                    const formData = new FormData(orderForm);
                     const data = {};
                     for (let [key, value] of formData.entries()) {
-                        if (key === 'languages[]') {
-                            if (!data['languages']) data['languages'] = [];
-                            data['languages'].push(value);
+                        if (key === 'cars[]') {
+                            if (!data['cars']) data['cars'] = [];
+                            data['cars'].push(value);
                         } else if (key === 'contract') {
                             data['contract'] = true;
                         } else {
                             data[key] = value;
                         }
                     }
-                    if (!data['languages']) data['languages'] = [];
+                    if (!data['cars']) data['cars'] = [];
                     if (!data['contract']) data['contract'] = false;
                     
                     if (formSubmitBtn) {
@@ -1279,63 +1373,8 @@ if (!empty($_SESSION['generated_login']) && $justSaved) {
                     } finally {
                         if (formSubmitBtn) {
                             formSubmitBtn.disabled = false;
-                            formSubmitBtn.textContent = '<?= isset($_SESSION['user_id']) ? '✏️ Обновить анкету' : '✉️ Отправить анкету' ?>';
+                            formSubmitBtn.textContent = '<?= isset($_SESSION['user_id']) ? '✏️ Обновить заявку' : '🚗 Отправить заявку' ?>';
                         }
-                    }
-                });
-            }
-            
-            // Контактная форма
-            const contactForm = document.getElementById('contactForm');
-            if (contactForm) {
-                contactForm.addEventListener('submit', async function(e) {
-                    e.preventDefault();
-                    const submitBtn = document.getElementById('contactSubmitBtn');
-                    const spinner = document.getElementById('contactSpinner');
-                    const formMessage = document.getElementById('contactFormMessage');
-                    const submitText = submitBtn.querySelector('span');
-                    const originalText = submitText.textContent;
-                    
-                    submitBtn.disabled = true;
-                    spinner.classList.remove('hidden');
-                    submitText.textContent = 'Отправка...';
-                    formMessage.classList.add('hidden');
-                    
-                    const formData = new FormData(contactForm);
-                    const data = Object.fromEntries(formData.entries());
-                    const formcarryData = {
-                        ...data,
-                        _subject: 'Новая заявка с сайта AutoElite',
-                        _replyto: data.email || '',
-                        _gotcha: '',
-                        source: 'main_form',
-                        timestamp: new Date().toLocaleString('ru-RU')
-                    };
-                    
-                    try {
-                        const response = await fetch('https://formcarry.com/s/6hnv04gn1c2', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
-                            body: JSON.stringify(formcarryData)
-                        });
-                        const result = await response.json();
-                        if (response.ok && result.code === 200) {
-                            formMessage.textContent = '✅ Спасибо за заявку! Мы свяжемся с вами в течение 15 минут.';
-                            formMessage.className = 'form-message success';
-                            formMessage.classList.remove('hidden');
-                            contactForm.reset();
-                        } else {
-                            throw new Error(result.message || 'Ошибка отправки');
-                        }
-                    } catch (error) {
-                        formMessage.textContent = `❌ Ошибка: ${error.message}. Пожалуйста, попробуйте еще раз.`;
-                        formMessage.className = 'form-message error';
-                        formMessage.classList.remove('hidden');
-                    } finally {
-                        submitBtn.disabled = false;
-                        spinner.classList.add('hidden');
-                        submitText.textContent = originalText;
-                        setTimeout(() => formMessage.classList.add('hidden'), 5000);
                     }
                 });
             }
