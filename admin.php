@@ -51,7 +51,7 @@ try {
     die('Ошибка БД: ' . $e->getMessage());
 }
 
-// Получаем данные для статистики
+// Получаем данные
 $users = $pdo->query("
     SELECT a.*, GROUP_CONCAT(cm.name SEPARATOR ', ') as cars_names
     FROM applications a
@@ -104,7 +104,7 @@ $total_users = count($users);
     <div class="container">
         <div class="admin-header">
             <h1>👑 Панель администратора AutoElite</h1>
-            <div class="admin-info">
+            <div>
                 <span>👤 admin</span>
                 <a href="#" onclick="logout()" class="logout-btn">🚪 Выйти</a>
             </div>
