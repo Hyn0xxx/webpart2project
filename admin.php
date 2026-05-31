@@ -86,7 +86,7 @@ try {
 }
 
 // --------------------
-// СОЗДАНИЕ ТАБЛИЦ
+// СОЗДАНИЕ ТАБЛИЦ (если не существуют)
 // --------------------
 
 $pdo->exec("
@@ -97,7 +97,7 @@ $pdo->exec("
         email VARCHAR(255) NOT NULL,
         birth_date DATE NOT NULL,
         gender ENUM('male', 'female', 'other') NOT NULL,
-        bio TEXT,
+        wish TEXT,
         contract_accepted TINYINT(1) DEFAULT 0,
         login VARCHAR(50) UNIQUE,
         password_hash VARCHAR(255),
@@ -106,26 +106,37 @@ $pdo->exec("
 ");
 
 $pdo->exec("
-    CREATE TABLE IF NOT EXISTS programming_languages (
+    CREATE TABLE IF NOT EXISTS car_models (
         id INT AUTO_INCREMENT PRIMARY KEY,
-        name VARCHAR(100) UNIQUE NOT NULL
+        name VARCHAR(100) UNIQUE NOT NULL,
+        price VARCHAR(100) NOT NULL
     )
 ");
 
 $pdo->exec("
-    CREATE TABLE IF NOT EXISTS application_languages (
+    CREATE TABLE IF NOT EXISTS application_cars (
         application_id INT,
-        language_id INT,
-        PRIMARY KEY (application_id, language_id),
+        car_id INT,
+        PRIMARY KEY (application_id, car_id),
         FOREIGN KEY (application_id) REFERENCES applications(id) ON DELETE CASCADE,
-        FOREIGN KEY (language_id) REFERENCES programming_languages(id) ON DELETE CASCADE
+        FOREIGN KEY (car_id) REFERENCES car_models(id) ON DELETE CASCADE
     )
 ");
 
-$languages = ['PHP', 'Python', 'JavaScript', 'Java', 'C++', 'C#', 'Ruby', 'Go', 'Swift', 'Kotlin'];
-$stmt = $pdo->prepare("INSERT IGNORE INTO programming_languages (name) VALUES (?)");
-foreach ($languages as $lang) {
-    $stmt->execute([$lang]);
+// Добавляем автомобили, если их нет
+$cars = [
+    ['name' => 'Porsche Panamera', 'price' => 'от 9 500 000 ₽'],
+    ['name' => 'Mercedes-Benz S-Class', 'price' => 'от 12 000 000 ₽'],
+    ['name' => 'BMW 7 Series', 'price' => 'от 8 900 000 ₽'],
+    ['name' => 'Audi A8', 'price' => 'от 7 800 000 ₽'],
+    ['name' => 'Lexus LS', 'price' => 'от 7 500 000 ₽'],
+    ['name' => 'Tesla Model S', 'price' => 'от 6 500 000 ₽'],
+    ['name' => 'Jaguar XJ', 'price' => 'от 6 200 000 ₽'],
+    ['name' => 'Maserati Quattroporte', 'price' => 'от 10 500 000 ₽']
+];
+$stmt = $pdo->prepare("INSERT IGNORE INTO car_models (name, price) VALUES (?, ?)");
+foreach ($cars as $car) {
+    $stmt->execute([$car['name'], $car['price']]);
 }
 
 // REST API для админки
@@ -155,9 +166,9 @@ if ($_SERVER['REQUEST_METHOD'] == 'PUT' && isset($_GET['id'])) {
             $errors['gender'] = 'Выберите пол.';
         }
         
-        $selectedLangs = $input['languages'] ?? [];
-        if (empty($selectedLangs)) {
-            $errors['languages'] = 'Выберите хотя бы один язык.';
+        $selectedCars = $input['cars'] ?? [];
+        if (empty($selectedCars)) {
+            $errors['cars'] = 'Выберите хотя бы один автомобиль.';
         }
         
         if (empty($input['contract'])) {
@@ -171,7 +182,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'PUT' && isset($_GET['id'])) {
                 $stmt = $pdo->prepare("
                     UPDATE applications 
                     SET full_name = ?, phone = ?, email = ?, birth_date = ?, 
-                        gender = ?, bio = ?, contract_accepted = ?
+                        gender = ?, wish = ?, contract_accepted = ?
                     WHERE id = ?
                 ");
                 $stmt->execute([
@@ -180,15 +191,15 @@ if ($_SERVER['REQUEST_METHOD'] == 'PUT' && isset($_GET['id'])) {
                     $input['email'],
                     $input['birth_date'],
                     $input['gender'],
-                    $input['bio'],
+                    $input['wish'],
                     1,
                     $user_id
                 ]);
                 
-                $pdo->prepare("DELETE FROM application_languages WHERE application_id = ?")->execute([$user_id]);
-                $stmtLang = $pdo->prepare("INSERT INTO application_languages (application_id, language_id) VALUES (?, ?)");
-                foreach ($selectedLangs as $langId) {
-                    $stmtLang->execute([$user_id, $langId]);
+                $pdo->prepare("DELETE FROM application_cars WHERE application_id = ?")->execute([$user_id]);
+                $stmtCar = $pdo->prepare("INSERT INTO application_cars (application_id, car_id) VALUES (?, ?)");
+                foreach ($selectedCars as $carId) {
+                    $stmtCar->execute([$user_id, $carId]);
                 }
                 
                 $pdo->commit();
@@ -213,7 +224,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'DELETE' && isset($_GET['id'])) {
     $user_id = (int)$_GET['id'];
     try {
         $pdo->beginTransaction();
-        $pdo->prepare("DELETE FROM application_languages WHERE application_id = ?")->execute([$user_id]);
+        $pdo->prepare("DELETE FROM application_cars WHERE application_id = ?")->execute([$user_id]);
         $pdo->prepare("DELETE FROM applications WHERE id = ?")->execute([$user_id]);
         $pdo->commit();
         header('Content-Type: application/json');
@@ -237,7 +248,7 @@ if (isset($_GET['delete']) && is_numeric($_GET['delete'])) {
     if (isset($_GET['confirm']) && $_GET['confirm'] == 'yes') {
         try {
             $pdo->beginTransaction();
-            $pdo->prepare("DELETE FROM application_languages WHERE application_id = ?")->execute([$delete_id]);
+            $pdo->prepare("DELETE FROM application_cars WHERE application_id = ?")->execute([$delete_id]);
             $pdo->prepare("DELETE FROM applications WHERE id = ?")->execute([$delete_id]);
             $pdo->commit();
             $message = "✅ Пользователь успешно удален!";
@@ -253,19 +264,19 @@ if (isset($_GET['delete']) && is_numeric($_GET['delete'])) {
 $edit_user_data = null;
 if ($edit_id) {
     $stmt = $pdo->prepare("
-        SELECT a.*, GROUP_CONCAT(al.language_id) as language_ids
+        SELECT a.*, GROUP_CONCAT(ac.car_id) as car_ids
         FROM applications a
-        LEFT JOIN application_languages al ON a.id = al.application_id
+        LEFT JOIN application_cars ac ON a.id = ac.application_id
         WHERE a.id = ?
         GROUP BY a.id
     ");
     $stmt->execute([$edit_id]);
     $edit_user_data = $stmt->fetch();
     
-    if ($edit_user_data && $edit_user_data['language_ids']) {
-        $edit_user_data['languages'] = explode(',', $edit_user_data['language_ids']);
+    if ($edit_user_data && $edit_user_data['car_ids']) {
+        $edit_user_data['cars'] = explode(',', $edit_user_data['car_ids']);
     } else {
-        $edit_user_data['languages'] = [];
+        $edit_user_data['cars'] = [];
     }
 }
 
@@ -293,9 +304,9 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['update_user'])) {
         $errors['gender'] = 'Выберите пол.';
     }
     
-    $selectedLangs = $_POST['languages'] ?? [];
-    if (empty($selectedLangs)) {
-        $errors['languages'] = 'Выберите хотя бы один язык.';
+    $selectedCars = $_POST['cars'] ?? [];
+    if (empty($selectedCars)) {
+        $errors['cars'] = 'Выберите хотя бы один автомобиль.';
     }
     
     if (!isset($_POST['contract'])) {
@@ -309,7 +320,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['update_user'])) {
             $stmt = $pdo->prepare("
                 UPDATE applications 
                 SET full_name = ?, phone = ?, email = ?, birth_date = ?, 
-                    gender = ?, bio = ?, contract_accepted = ?
+                    gender = ?, wish = ?, contract_accepted = ?
                 WHERE id = ?
             ");
             $stmt->execute([
@@ -318,15 +329,15 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['update_user'])) {
                 $_POST['email'],
                 $_POST['birth_date'],
                 $_POST['gender'],
-                $_POST['bio'],
+                $_POST['wish'],
                 1,
                 $user_id
             ]);
             
-            $pdo->prepare("DELETE FROM application_languages WHERE application_id = ?")->execute([$user_id]);
-            $stmtLang = $pdo->prepare("INSERT INTO application_languages (application_id, language_id) VALUES (?, ?)");
-            foreach ($selectedLangs as $langId) {
-                $stmtLang->execute([$user_id, $langId]);
+            $pdo->prepare("DELETE FROM application_cars WHERE application_id = ?")->execute([$user_id]);
+            $stmtCar = $pdo->prepare("INSERT INTO application_cars (application_id, car_id) VALUES (?, ?)");
+            foreach ($selectedCars as $carId) {
+                $stmtCar->execute([$user_id, $carId]);
             }
             
             $pdo->commit();
@@ -348,23 +359,23 @@ if (isset($_GET['message'])) {
     $message_type = "success";
 }
 
-$languagesList = $pdo->query("SELECT id, name FROM programming_languages ORDER BY name")->fetchAll();
+$carsList = $pdo->query("SELECT id, name, price FROM car_models ORDER BY name")->fetchAll();
 
 $users = $pdo->query("
     SELECT a.*, 
-           GROUP_CONCAT(pl.name SEPARATOR ', ') as languages_names
+           GROUP_CONCAT(cm.name SEPARATOR ', ') as cars_names
     FROM applications a
-    LEFT JOIN application_languages al ON a.id = al.application_id
-    LEFT JOIN programming_languages pl ON al.language_id = pl.id
+    LEFT JOIN application_cars ac ON a.id = ac.application_id
+    LEFT JOIN car_models cm ON ac.car_id = cm.id
     GROUP BY a.id
     ORDER BY a.id DESC
 ")->fetchAll();
 
 $stats = $pdo->query("
-    SELECT pl.id, pl.name, COUNT(al.application_id) as count
-    FROM programming_languages pl
-    LEFT JOIN application_languages al ON pl.id = al.language_id
-    GROUP BY pl.id, pl.name
+    SELECT cm.id, cm.name, cm.price, COUNT(ac.application_id) as count
+    FROM car_models cm
+    LEFT JOIN application_cars ac ON cm.id = ac.car_id
+    GROUP BY cm.id, cm.name, cm.price
     ORDER BY count DESC
 ")->fetchAll();
 
@@ -475,7 +486,7 @@ $total_users = count($users);
 
         .stats-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
             gap: 20px;
         }
 
@@ -643,7 +654,7 @@ $total_users = count($users);
         }
 
         select[multiple] {
-            height: 120px;
+            height: 150px;
         }
 
         .btn-submit {
@@ -705,25 +716,26 @@ $total_users = count($users);
         <?php endif; ?>
 
         <div class="section">
-            <h2>📊 Статистика по языкам программирования</h2>
+            <h2>📊 Статистика по автомобилям</h2>
             <div class="stats-grid">
                 <div class="stat-card">
-                    <h3>Всего пользователей</h3>
+                    <h3>Всего заявок</h3>
                     <div class="stat-number"><?= $total_users ?></div>
                 </div>
                 <?php foreach ($stats as $stat): ?>
                     <div class="stat-card">
                         <h3><?= htmlspecialchars($stat['name']) ?></h3>
                         <div class="stat-number"><?= $stat['count'] ?></div>
+                        <small><?= htmlspecialchars($stat['price']) ?></small>
                     </div>
                 <?php endforeach; ?>
             </div>
         </div>
 
         <div class="section">
-            <h2>👥 Все пользователи</h2>
+            <h2>👥 Все заявки</h2>
             <?php if (empty($users)): ?>
-                <p style="text-align: center; color: #999; padding: 40px;">Нет зарегистрированных пользователей</p>
+                <p style="text-align: center; color: #999; padding: 40px;">Нет зарегистрированных заявок</p>
             <?php else: ?>
                 <div class="table-wrapper">
                     <table>
@@ -735,7 +747,8 @@ $total_users = count($users);
                                 <th>Email</th>
                                 <th>Дата рождения</th>
                                 <th>Пол</th>
-                                <th>Языки</th>
+                                <th>Автомобили</th>
+                                <th>Пожелания</th>
                                 <th>Действия</th>
                             </tr>
                         </thead>
@@ -753,7 +766,8 @@ $total_users = count($users);
                                         echo $genders[$user['gender']] ?? $user['gender'];
                                         ?>
                                     </td>
-                                    <td><?= htmlspecialchars($user['languages_names'] ?: '-') ?></td>
+                                    <td><?= htmlspecialchars($user['cars_names'] ?: '-') ?></td>
+                                    <td><?= htmlspecialchars(mb_substr($user['wish'] ?? '', 0, 50)) ?>...</td>
                                     <td class="actions">
                                         <a href="?edit=<?= $user['id'] ?>" class="btn-edit">✏️ Редакт.</a>
                                         <a href="#" class="btn-delete" onclick="deleteUser(event, <?= $user['id'] ?>, '<?= htmlspecialchars(addslashes($user['full_name'])) ?>')">🗑️ Удалить</a>
@@ -768,11 +782,11 @@ $total_users = count($users);
         </div>
     </div>
 
-    <?php if ($edit_user_data && $languagesList): ?>
+    <?php if ($edit_user_data && $carsList): ?>
     <div class="modal" id="editModal">
         <div class="modal-content">
             <div class="modal-header">
-                <h3>✏️ Редактирование пользователя #<?= $edit_user_data['id'] ?></h3>
+                <h3>✏️ Редактирование заявки #<?= $edit_user_data['id'] ?></h3>
                 <button class="close-btn" onclick="closeModal()">&times;</button>
             </div>
             <form method="POST" id="editForm">
@@ -808,19 +822,19 @@ $total_users = count($users);
                 </div>
                 
                 <div class="form-group">
-                    <label>Любимые языки *</label>
-                    <select name="languages[]" id="edit_languages" multiple required>
-                        <?php foreach ($languagesList as $lang): ?>
-                            <option value="<?= $lang['id'] ?>" <?= in_array($lang['id'], $edit_user_data['languages']) ? 'selected' : '' ?>>
-                                <?= htmlspecialchars($lang['name']) ?>
+                    <label>Интересующие автомобили *</label>
+                    <select name="cars[]" id="edit_cars" multiple required>
+                        <?php foreach ($carsList as $car): ?>
+                            <option value="<?= $car['id'] ?>" <?= in_array($car['id'], $edit_user_data['cars']) ? 'selected' : '' ?>>
+                                <?= htmlspecialchars($car['name']) ?> - <?= htmlspecialchars($car['price']) ?>
                             </option>
                         <?php endforeach; ?>
                     </select>
                 </div>
                 
                 <div class="form-group">
-                    <label>Биография</label>
-                    <textarea name="bio" id="edit_bio" rows="4"><?= htmlspecialchars($edit_user_data['bio']) ?></textarea>
+                    <label>Пожелания к заказу</label>
+                    <textarea name="wish" id="edit_wish" rows="4"><?= htmlspecialchars($edit_user_data['wish']) ?></textarea>
                 </div>
                 
                 <div class="form-group">
@@ -851,8 +865,7 @@ $total_users = count($users);
     <script>
         function deleteUser(event, userId, userName) {
             event.preventDefault();
-            if (confirm(`Вы уверены, что хотите удалить пользователя "${userName}"? Это действие нельзя отменить.`)) {
-                // AJAX DELETE для JS
+            if (confirm(`Вы уверены, что хотите удалить заявку пользователя "${userName}"? Это действие нельзя отменить.`)) {
                 fetch(`admin.php?id=${userId}`, {
                     method: 'DELETE',
                     headers: {
@@ -869,7 +882,6 @@ $total_users = count($users);
                     }
                 })
                 .catch(error => {
-                    // Fallback на обычную ссылку
                     window.location.href = `?delete=${userId}&confirm=yes`;
                 });
             }
@@ -890,7 +902,6 @@ $total_users = count($users);
             }
         }
         
-        // AJAX редактирование
         const editForm = document.getElementById('editForm');
         if (editForm) {
             editForm.addEventListener('submit', async function(e) {
@@ -899,16 +910,16 @@ $total_users = count($users);
                 const formData = new FormData(editForm);
                 const data = {};
                 for (let [key, value] of formData.entries()) {
-                    if (key === 'languages[]') {
-                        if (!data['languages']) data['languages'] = [];
-                        data['languages'].push(value);
+                    if (key === 'cars[]') {
+                        if (!data['cars']) data['cars'] = [];
+                        data['cars'].push(value);
                     } else if (key === 'contract') {
                         data['contract'] = true;
                     } else if (key !== 'update_user' && key !== 'user_id') {
                         data[key] = value;
                     }
                 }
-                if (!data['languages']) data['languages'] = [];
+                if (!data['cars']) data['cars'] = [];
                 if (!data['contract']) data['contract'] = false;
                 
                 const userId = formData.get('user_id');
