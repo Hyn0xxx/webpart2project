@@ -18,13 +18,14 @@ if (!isset($_SERVER['PHP_AUTH_USER']) ||
             body { font-family: Arial, sans-serif; background: #800020; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
             .error-box { background: white; padding: 40px; border-radius: 20px; text-align: center; }
             .error-box h1 { color: #800020; }
-            .error-box button { background: #9E9E9E; color: #800020; border: none; padding: 10px 30px; border-radius: 10px; cursor: pointer; }
+            .error-box button { background: #9E9E9E; color: #800020; border: none; padding: 10px 30px; border-radius: 10px; cursor: pointer; font-size: 16px; }
+            .error-box button:hover { background: #757575; }
         </style>
     </head>
     <body>
         <div class="error-box">
             <h1>🔒 Доступ запрещен</h1>
-            <p>Требуется авторизация</p>
+            <p>Требуется авторизация для доступа к админ-панели</p>
             <button onclick="window.location.reload()">Попробовать снова</button>
         </div>
     </body>
@@ -82,22 +83,25 @@ $total_users = count($users);
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { background: #800020; font-family: 'Segoe UI', sans-serif; padding: 20px; }
         .container { max-width: 1400px; margin: 0 auto; }
-        .admin-header { background: #9E9E9E; color: #800020; padding: 20px 30px; border-radius: 20px; margin-bottom: 30px; display: flex; justify-content: space-between; align-items: center; }
-        .section { background: white; border-radius: 20px; padding: 25px; margin-bottom: 30px; }
+        .admin-header { background: #9E9E9E; color: #800020; padding: 20px 30px; border-radius: 20px; margin-bottom: 30px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 15px; }
+        .admin-header h1 { font-size: 1.8em; }
+        .section { background: white; border-radius: 20px; padding: 25px; margin-bottom: 30px; box-shadow: 0 5px 20px rgba(0,0,0,0.1); }
         .section h2 { color: #800020; margin-bottom: 20px; border-bottom: 2px solid #9E9E9E; padding-bottom: 10px; }
         .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px; margin-bottom: 30px; }
-        .stat-card { background: linear-gradient(135deg, #9E9E9E 0%, #757575 100%); padding: 20px; border-radius: 15px; text-align: center; }
+        .stat-card { background: linear-gradient(135deg, #9E9E9E 0%, #757575 100%); padding: 20px; border-radius: 15px; text-align: center; transition: transform 0.3s; }
+        .stat-card:hover { transform: translateY(-5px); }
         .stat-card h3 { color: #800020; margin-bottom: 10px; }
         .stat-number { font-size: 2.5em; font-weight: bold; color: #800020; }
         .table-wrapper { overflow-x: auto; }
         table { width: 100%; border-collapse: collapse; }
         th, td { padding: 12px; text-align: left; border-bottom: 1px solid #e0e0e0; }
-        th { background: #f8f9fa; color: #800020; }
+        th { background: #f8f9fa; color: #800020; font-weight: 600; }
         tr:hover { background: #f8f9fa; }
         .back-link { display: inline-block; margin-top: 20px; color: #800020; text-decoration: none; font-weight: 600; }
         .back-link:hover { text-decoration: underline; }
-        .logout-btn { background: rgba(128, 0, 32, 0.8); color: white; padding: 8px 20px; border-radius: 10px; text-decoration: none; }
-        @media (max-width: 768px) { th, td { padding: 8px; font-size: 0.85em; } }
+        .logout-btn { background: rgba(128, 0, 32, 0.8); color: white; padding: 8px 20px; border-radius: 10px; text-decoration: none; transition: all 0.3s; }
+        .logout-btn:hover { background: #800020; transform: translateY(-2px); }
+        @media (max-width: 768px) { th, td { padding: 8px; font-size: 0.85em; } .admin-header { flex-direction: column; text-align: center; } }
     </style>
 </head>
 <body>
