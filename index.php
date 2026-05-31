@@ -28,108 +28,65 @@ try {
 }
 
 // --------------------
-// ФУНКЦИЯ ДЛЯ БЕЗОПАСНОГО СОЗДАНИЯ ТАБЛИЦ
+// ПРОВЕРКА И СОЗДАНИЕ ТАБЛИЦ
 // --------------------
 
-function safeTableCreate($pdo, $sql) {
-    try {
-        $pdo->exec($sql);
-        return true;
-    } catch(PDOException $e) {
-        if ($e->getCode() != '42S01') { // Игнорируем ошибку "таблица уже существует"
-            throw $e;
-        }
-        return false;
-    }
-}
+// Проверяем, существует ли таблица applications
+$tableExists = $pdo->query("SHOW TABLES LIKE 'applications'")->rowCount() > 0;
 
-// --------------------
-// УДАЛЕНИЕ СТАРЫХ ТАБЛИЦ (ЕСЛИ ОНИ ЕСТЬ)
-// --------------------
-
-try {
-    // Отключаем проверку внешних ключей
-    $pdo->exec("SET FOREIGN_KEY_CHECKS = 0");
+if (!$tableExists) {
+    // Создаем таблицу заявок
+    $pdo->exec("
+        CREATE TABLE applications (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            full_name VARCHAR(255) NOT NULL,
+            phone VARCHAR(50) NOT NULL,
+            email VARCHAR(255) NOT NULL,
+            birth_date DATE NOT NULL,
+            gender ENUM('male', 'female', 'other') NOT NULL,
+            wish TEXT,
+            contract_accepted TINYINT(1) DEFAULT 0,
+            login VARCHAR(50) UNIQUE,
+            password_hash VARCHAR(255),
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ");
     
-    // Проверяем существование таблиц и удаляем их
-    $tables = ['application_cars', 'applications', 'car_models'];
-    foreach ($tables as $table) {
-        $result = $pdo->query("SHOW TABLES LIKE '$table'");
-        if ($result->rowCount() > 0) {
-            $pdo->exec("DROP TABLE `$table`");
-        }
-    }
+    // Создаем таблицу автомобилей
+    $pdo->exec("
+        CREATE TABLE car_models (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            name VARCHAR(100) UNIQUE NOT NULL,
+            price VARCHAR(100) NOT NULL
+        )
+    ");
     
-    // Включаем проверку внешних ключей
-    $pdo->exec("SET FOREIGN_KEY_CHECKS = 1");
-} catch(PDOException $e) {
-    // Игнорируем ошибки при удалении
-}
-
-// --------------------
-// СОЗДАНИЕ НОВЫХ ТАБЛИЦ
-// --------------------
-
-// Таблица заявок
-$sql = "
-CREATE TABLE applications (
-    id INT(11) AUTO_INCREMENT PRIMARY KEY,
-    full_name VARCHAR(255) NOT NULL,
-    phone VARCHAR(50) NOT NULL,
-    email VARCHAR(255) NOT NULL,
-    birth_date DATE NOT NULL,
-    gender ENUM('male', 'female', 'other') NOT NULL,
-    wish TEXT,
-    contract_accepted TINYINT(1) DEFAULT 0,
-    login VARCHAR(50) UNIQUE,
-    password_hash VARCHAR(255),
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci";
-$pdo->exec($sql);
-
-// Таблица автомобилей
-$sql = "
-CREATE TABLE car_models (
-    id INT(11) AUTO_INCREMENT PRIMARY KEY,
-    name VARCHAR(100) UNIQUE NOT NULL,
-    price VARCHAR(100) NOT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci";
-$pdo->exec($sql);
-
-// Таблица связи
-$sql = "
-CREATE TABLE application_cars (
-    application_id INT(11) NOT NULL,
-    car_id INT(11) NOT NULL,
-    PRIMARY KEY (application_id, car_id),
-    INDEX idx_application_id (application_id),
-    INDEX idx_car_id (car_id),
-    FOREIGN KEY (application_id) REFERENCES applications(id) ON DELETE CASCADE,
-    FOREIGN KEY (car_id) REFERENCES car_models(id) ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci";
-$pdo->exec($sql);
-
-// --------------------
-// ДОБАВЛЕНИЕ АВТОМОБИЛЕЙ
-// --------------------
-
-$cars = [
-    ['Porsche Panamera', 'от 9 500 000 ₽'],
-    ['Mercedes-Benz S-Class', 'от 12 000 000 ₽'],
-    ['BMW 7 Series', 'от 8 900 000 ₽'],
-    ['Audi A8', 'от 7 800 000 ₽'],
-    ['Lexus LS', 'от 7 500 000 ₽'],
-    ['Tesla Model S', 'от 6 500 000 ₽'],
-    ['Jaguar XJ', 'от 6 200 000 ₽'],
-    ['Maserati Quattroporte', 'от 10 500 000 ₽']
-];
-
-$stmt = $pdo->prepare("INSERT IGNORE INTO car_models (name, price) VALUES (?, ?)");
-foreach ($cars as $car) {
-    try {
+    // Создаем таблицу связи
+    $pdo->exec("
+        CREATE TABLE application_cars (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            application_id INT NOT NULL,
+            car_id INT NOT NULL,
+            INDEX(application_id),
+            INDEX(car_id)
+        )
+    ");
+    
+    // Добавляем автомобили
+    $cars = [
+        ['Porsche Panamera', 'от 9 500 000 ₽'],
+        ['Mercedes-Benz S-Class', 'от 12 000 000 ₽'],
+        ['BMW 7 Series', 'от 8 900 000 ₽'],
+        ['Audi A8', 'от 7 800 000 ₽'],
+        ['Lexus LS', 'от 7 500 000 ₽'],
+        ['Tesla Model S', 'от 6 500 000 ₽'],
+        ['Jaguar XJ', 'от 6 200 000 ₽'],
+        ['Maserati Quattroporte', 'от 10 500 000 ₽']
+    ];
+    
+    $stmt = $pdo->prepare("INSERT INTO car_models (name, price) VALUES (?, ?)");
+    foreach ($cars as $car) {
         $stmt->execute($car);
-    } catch(PDOException $e) {
-        // Игнорируем дубликаты
     }
 }
 
