@@ -28,55 +28,62 @@ try {
 }
 
 // --------------------
-// СОЗДАНИЕ ТАБЛИЦ (с правильными типами данных)
+// СОЗДАНИЕ ТАБЛИЦ (с правильной структурой)
 // --------------------
 
-// Сначала удаляем существующие таблицы, если они есть (для пересоздания с правильными типами)
 try {
+    // Отключаем проверку внешних ключей
     $pdo->exec("SET FOREIGN_KEY_CHECKS = 0");
+    
+    // Удаляем таблицы, если они существуют
     $pdo->exec("DROP TABLE IF EXISTS application_cars");
     $pdo->exec("DROP TABLE IF EXISTS applications");
     $pdo->exec("DROP TABLE IF EXISTS car_models");
+    
+    // Включаем проверку внешних ключей
     $pdo->exec("SET FOREIGN_KEY_CHECKS = 1");
 } catch(PDOException $e) {
-    // Таблицы могут не существовать, игнорируем ошибку
+    // Игнорируем ошибки при удалении
 }
 
-$pdo->exec("
-    CREATE TABLE IF NOT EXISTS applications (
-        id INT AUTO_INCREMENT PRIMARY KEY,
-        full_name VARCHAR(255) NOT NULL,
-        phone VARCHAR(50) NOT NULL,
-        email VARCHAR(255) NOT NULL,
-        birth_date DATE NOT NULL,
-        gender ENUM('male', 'female', 'other') NOT NULL,
-        wish TEXT,
-        contract_accepted TINYINT(1) DEFAULT 0,
-        login VARCHAR(50) UNIQUE,
-        password_hash VARCHAR(255),
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-");
+// Создаем таблицу applications
+$sql_applications = "
+CREATE TABLE IF NOT EXISTS applications (
+    id INT(11) AUTO_INCREMENT PRIMARY KEY,
+    full_name VARCHAR(255) NOT NULL,
+    phone VARCHAR(50) NOT NULL,
+    email VARCHAR(255) NOT NULL,
+    birth_date DATE NOT NULL,
+    gender ENUM('male', 'female', 'other') NOT NULL,
+    wish TEXT,
+    contract_accepted TINYINT(1) DEFAULT 0,
+    login VARCHAR(50) UNIQUE,
+    password_hash VARCHAR(255),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci";
+$pdo->exec($sql_applications);
 
-$pdo->exec("
-    CREATE TABLE IF NOT EXISTS car_models (
-        id INT AUTO_INCREMENT PRIMARY KEY,
-        name VARCHAR(100) UNIQUE NOT NULL,
-        price VARCHAR(100) NOT NULL
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-");
+// Создаем таблицу car_models
+$sql_car_models = "
+CREATE TABLE IF NOT EXISTS car_models (
+    id INT(11) AUTO_INCREMENT PRIMARY KEY,
+    name VARCHAR(100) UNIQUE NOT NULL,
+    price VARCHAR(100) NOT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci";
+$pdo->exec($sql_car_models);
 
-$pdo->exec("
-    CREATE TABLE IF NOT EXISTS application_cars (
-        application_id INT NOT NULL,
-        car_id INT NOT NULL,
-        PRIMARY KEY (application_id, car_id),
-        FOREIGN KEY (application_id) REFERENCES applications(id) ON DELETE CASCADE,
-        FOREIGN KEY (car_id) REFERENCES car_models(id) ON DELETE CASCADE
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-");
+// Создаем таблицу application_cars
+$sql_application_cars = "
+CREATE TABLE IF NOT EXISTS application_cars (
+    application_id INT(11) NOT NULL,
+    car_id INT(11) NOT NULL,
+    PRIMARY KEY (application_id, car_id),
+    FOREIGN KEY (application_id) REFERENCES applications(id) ON DELETE CASCADE,
+    FOREIGN KEY (car_id) REFERENCES car_models(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci";
+$pdo->exec($sql_application_cars);
 
-// Добавляем автомобили, если их нет
+// Добавляем автомобили
 $cars = [
     ['name' => 'Porsche Panamera', 'price' => 'от 9 500 000 ₽'],
     ['name' => 'Mercedes-Benz S-Class', 'price' => 'от 12 000 000 ₽'],
@@ -88,10 +95,10 @@ $cars = [
     ['name' => 'Maserati Quattroporte', 'price' => 'от 10 500 000 ₽']
 ];
 
-$stmt = $pdo->prepare("INSERT IGNORE INTO car_models (name, price) VALUES (?, ?)");
+$stmt = $pdo->prepare("INSERT IGNORE INTO car_models (name, price) VALUES (:name, :price)");
 foreach ($cars as $car) {
     try {
-        $stmt->execute([$car['name'], $car['price']]);
+        $stmt->execute([':name' => $car['name'], ':price' => $car['price']]);
     } catch(PDOException $e) {
         // Если запись уже существует, игнорируем
     }
@@ -216,6 +223,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && strpos($_SERVER['CONTENT_TYPE'] ?? '
         foreach ($selectedCars as $carId) {
             if (!in_array($carId, $allowedCarIds)) {
                 $errors['cars'] = 'Выбран недопустимый автомобиль.';
+                break;
             }
         }
         
@@ -237,7 +245,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && strpos($_SERVER['CONTENT_TYPE'] ?? '
             
             if ($isAuth) {
                 // UPDATE
-                $appId = $_SESSION['user_id'];
+                $appId = (int)$_SESSION['user_id'];
                 $stmt = $pdo->prepare("
                     UPDATE applications
                     SET full_name=?, phone=?, email=?, birth_date=?, gender=?, wish=?, contract_accepted=?
@@ -289,7 +297,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && strpos($_SERVER['CONTENT_TYPE'] ?? '
             // Сохраняем выбранные автомобили
             $stmtCar = $pdo->prepare("INSERT INTO application_cars (application_id, car_id) VALUES (?, ?)");
             foreach ($selectedCars as $carId) {
-                $stmtCar->execute([$appId, $carId]);
+                $stmtCar->execute([$appId, (int)$carId]);
             }
             
             $pdo->commit();
@@ -344,6 +352,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && !isset($_POST['login_submit'])) {
     foreach ($selectedCars as $carId) {
         if (!in_array($carId, $allowedCarIds)) {
             $errors['cars'] = 'Выбран недопустимый автомобиль.';
+            break;
         }
     }
     
@@ -369,7 +378,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && !isset($_POST['login_submit'])) {
             $pdo->beginTransaction();
             
             if (isset($_SESSION['user_id'])) {
-                $appId = $_SESSION['user_id'];
+                $appId = (int)$_SESSION['user_id'];
                 $stmt = $pdo->prepare("
                     UPDATE applications
                     SET full_name=?, phone=?, email=?, birth_date=?, gender=?, wish=?, contract_accepted=?
@@ -419,7 +428,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && !isset($_POST['login_submit'])) {
             
             $stmtCar = $pdo->prepare("INSERT INTO application_cars (application_id, car_id) VALUES (?, ?)");
             foreach ($selectedCars as $carId) {
-                $stmtCar->execute([$appId, $carId]);
+                $stmtCar->execute([$appId, (int)$carId]);
             }
             
             $pdo->commit();
@@ -441,7 +450,7 @@ if (isset($formValues)) {
 } 
 elseif (isset($_SESSION['user_id'])) {
     $stmt = $pdo->prepare("SELECT * FROM applications WHERE id=?");
-    $stmt->execute([$_SESSION['user_id']]);
+    $stmt->execute([(int)$_SESSION['user_id']]);
     $userData = $stmt->fetch();
     
     if ($userData) {
@@ -454,7 +463,7 @@ elseif (isset($_SESSION['user_id'])) {
         $values['contract'] = $userData['contract_accepted'];
         
         $stmt = $pdo->prepare("SELECT car_id FROM application_cars WHERE application_id=?");
-        $stmt->execute([$_SESSION['user_id']]);
+        $stmt->execute([(int)$_SESSION['user_id']]);
         $values['cars'] = array_column($stmt->fetchAll(), 'car_id');
     }
 } 
@@ -493,293 +502,61 @@ if (!empty($_SESSION['generated_login']) && $justSaved) {
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&family=Open+Sans:wght@400;600;700&display=swap" rel="stylesheet">
     <style>
-        /* Дополнительные стили для формы заказа */
-        .order-form-section {
-            background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
-            padding: 80px 0;
-        }
-        
-        .order-form-container {
-            max-width: 800px;
-            margin: 0 auto;
-            background: white;
-            border-radius: 20px;
-            box-shadow: 0 20px 60px rgba(0,0,0,0.1);
-            overflow: hidden;
-        }
-        
-        .order-form-header {
-            background: #800020;
-            color: white;
-            padding: 30px;
-            text-align: center;
-        }
-        
-        .order-form-header h2 {
-            font-size: 1.8em;
-            margin-bottom: 10px;
-        }
-        
-        .order-form-body {
-            padding: 40px;
-        }
-        
-        .auth-section {
-            background: #9E9E9E;
-            padding: 25px;
-            border-radius: 15px;
-            margin-bottom: 30px;
-        }
-        
-        .auth-section h3 {
-            color: #800020;
-            margin-bottom: 20px;
-        }
-        
-        .form-group {
-            margin-bottom: 20px;
-        }
-        
-        .form-group label {
-            display: block;
-            margin-bottom: 8px;
-            font-weight: 600;
-            color: #333;
-        }
-        
-        .form-group input,
-        .form-group select,
-        .form-group textarea {
-            width: 100%;
-            padding: 12px 15px;
-            border: 2px solid #e0e0e0;
-            border-radius: 10px;
-            font-size: 1em;
-            transition: all 0.3s;
-        }
-        
-        .form-group input:focus,
-        .form-group select:focus,
-        .form-group textarea:focus {
-            outline: none;
-            border-color: #9E9E9E;
-            box-shadow: 0 0 0 3px rgba(158,158,158,0.3);
-        }
-        
-        .form-group select[multiple] {
-            height: 150px;
-        }
-        
-        .radio-group {
-            display: flex;
-            gap: 20px;
-            padding: 10px 0;
-        }
-        
-        .radio-group label {
-            display: inline-flex;
-            align-items: center;
-            font-weight: normal;
-            margin-bottom: 0;
-            cursor: pointer;
-        }
-        
-        .radio-group input {
-            width: auto;
-            margin-right: 8px;
-        }
-        
-        .checkbox-label {
-            display: flex;
-            align-items: center;
-            cursor: pointer;
-        }
-        
-        .checkbox-label input {
-            width: auto;
-            margin-right: 10px;
-        }
-        
-        .btn-submit {
-            background: #800020;
-            color: white;
-            border: none;
-            padding: 14px 30px;
-            font-size: 1em;
-            font-weight: 600;
-            border-radius: 10px;
-            cursor: pointer;
-            transition: all 0.3s;
-            width: 100%;
-        }
-        
-        .btn-submit:hover {
-            background: #9E9E9E;
-            color: #800020;
-            transform: translateY(-2px);
-        }
-        
-        .error-message {
-            color: #dc3545;
-            font-size: 0.85em;
-            margin-top: 5px;
-            display: block;
-        }
-        
-        .success-message {
-            background: #d4edda;
-            color: #155724;
-            padding: 15px;
-            border-radius: 10px;
-            margin-bottom: 20px;
-            border-left: 4px solid #28a745;
-        }
-        
-        .form-error {
-            border-color: #dc3545 !important;
-        }
-        
-        .logout-link {
-            display: inline-block;
-            margin-top: 10px;
-            color: #800020;
-            text-decoration: none;
-            font-weight: 600;
-        }
-        
-        .logout-link:hover {
-            text-decoration: underline;
-        }
-        
-        .admin-link {
-            position: fixed;
-            bottom: 20px;
-            right: 20px;
-            background: #800020;
-            color: white;
-            padding: 12px 20px;
-            border-radius: 30px;
-            text-decoration: none;
-            font-weight: 600;
-            box-shadow: 0 5px 15px rgba(0,0,0,0.2);
-            transition: all 0.3s;
-            z-index: 1000;
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            cursor: pointer;
-        }
-        
-        .admin-link:hover {
-            background: #9E9E9E;
-            color: #800020;
-            transform: translateY(-3px);
-            box-shadow: 0 8px 25px rgba(0,0,0,0.3);
-        }
-        
-        hr {
-            margin: 30px 0;
-            border: none;
-            height: 1px;
-            background: linear-gradient(to right, transparent, #800020, transparent);
-        }
-        
-        .modal-overlay {
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background: rgba(0,0,0,0.7);
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            z-index: 2000;
-        }
-        
-        .modal-overlay.hidden {
-            display: none;
-        }
-        
-        .modal {
-            background: white;
-            width: 90%;
-            max-width: 450px;
-            border-radius: 20px;
-            padding: 30px;
-            position: relative;
-            animation: modalAppear 0.3s ease;
-        }
-        
-        @keyframes modalAppear {
-            from {
-                opacity: 0;
-                transform: translateY(-50px);
-            }
-            to {
-                opacity: 1;
-                transform: translateY(0);
-            }
-        }
-        
-        .modal-close {
-            position: absolute;
-            top: 15px;
-            right: 15px;
-            background: none;
-            border: none;
-            font-size: 1.5rem;
-            color: #999;
-            cursor: pointer;
-        }
-        
-        .modal-close:hover {
-            color: #800020;
-        }
-        
-        .modal-title {
-            font-size: 1.5rem;
-            color: #800020;
-            margin-bottom: 20px;
-            text-align: center;
-        }
-        
-        @media (max-width: 768px) {
-            .order-form-body {
-                padding: 20px;
-            }
-            
-            .radio-group {
-                flex-direction: column;
-                gap: 10px;
-            }
-            
-            .admin-link {
-                padding: 8px 15px;
-                font-size: 0.9em;
-            }
-        }
+        /* Все стили из предыдущей версии остаются */
+        *{margin:0;padding:0;box-sizing:border-box}
+        body{font-family:'Segoe UI',Tahoma,Geneva,Verdana,sans-serif;background:#800020;min-height:100vh}
+        .order-form-section{background:linear-gradient(135deg,#f8f9fa 0%,#e9ecef 100%);padding:80px 0}
+        .order-form-container{max-width:800px;margin:0 auto;background:white;border-radius:20px;box-shadow:0 20px 60px rgba(0,0,0,0.1);overflow:hidden}
+        .order-form-header{background:#800020;color:white;padding:30px;text-align:center}
+        .order-form-header h2{font-size:1.8em;margin-bottom:10px}
+        .order-form-body{padding:40px}
+        .auth-section{background:#9E9E9E;padding:25px;border-radius:15px;margin-bottom:30px}
+        .auth-section h3{color:#800020;margin-bottom:20px}
+        .form-group{margin-bottom:20px}
+        .form-group label{display:block;margin-bottom:8px;font-weight:600;color:#333}
+        .form-group input,.form-group select,.form-group textarea{width:100%;padding:12px 15px;border:2px solid #e0e0e0;border-radius:10px;font-size:1em;transition:all 0.3s}
+        .form-group input:focus,.form-group select:focus,.form-group textarea:focus{outline:none;border-color:#9E9E9E;box-shadow:0 0 0 3px rgba(158,158,158,0.3)}
+        .form-group select[multiple]{height:150px}
+        .radio-group{display:flex;gap:20px;padding:10px 0}
+        .radio-group label{display:inline-flex;align-items:center;font-weight:normal;margin-bottom:0;cursor:pointer}
+        .radio-group input{width:auto;margin-right:8px}
+        .checkbox-label{display:flex;align-items:center;cursor:pointer}
+        .checkbox-label input{width:auto;margin-right:10px}
+        .btn-submit{background:#800020;color:white;border:none;padding:14px 30px;font-size:1em;font-weight:600;border-radius:10px;cursor:pointer;transition:all 0.3s;width:100%}
+        .btn-submit:hover{background:#9E9E9E;color:#800020;transform:translateY(-2px)}
+        .error-message{color:#dc3545;font-size:0.85em;margin-top:5px;display:block}
+        .success-message{background:#d4edda;color:#155724;padding:15px;border-radius:10px;margin-bottom:20px;border-left:4px solid #28a745}
+        .form-error{border-color:#dc3545 !important}
+        .logout-link{display:inline-block;margin-top:10px;color:#800020;text-decoration:none;font-weight:600}
+        .logout-link:hover{text-decoration:underline}
+        .admin-link{position:fixed;bottom:20px;right:20px;background:#800020;color:white;padding:12px 20px;border-radius:30px;text-decoration:none;font-weight:600;box-shadow:0 5px 15px rgba(0,0,0,0.2);transition:all 0.3s;z-index:1000;display:flex;align-items:center;gap:8px;cursor:pointer}
+        .admin-link:hover{background:#9E9E9E;color:#800020;transform:translateY(-3px)}
+        hr{margin:30px 0;border:none;height:1px;background:linear-gradient(to right,transparent,#800020,transparent)}
+        .modal-overlay{position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.7);display:flex;justify-content:center;align-items:center;z-index:2000}
+        .modal-overlay.hidden{display:none}
+        .modal{background:white;width:90%;max-width:450px;border-radius:20px;padding:30px;position:relative;animation:modalAppear 0.3s ease}
+        @keyframes modalAppear{from{opacity:0;transform:translateY(-50px)}to{opacity:1;transform:translateY(0)}}
+        .modal-close{position:absolute;top:15px;right:15px;background:none;border:none;font-size:1.5rem;color:#999;cursor:pointer}
+        .modal-close:hover{color:#800020}
+        .modal-title{font-size:1.5rem;color:#800020;margin-bottom:20px;text-align:center}
+        @media (max-width:768px){.order-form-body{padding:20px}.radio-group{flex-direction:column;gap:10px}.admin-link{padding:8px 15px;font-size:0.9em}}
     </style>
 </head>
 <body>
-    <!-- Шапка с видео -->
     <header class="header">
         <div class="video-background">
             <video autoplay muted loop playsinline>
                 <source src="assets/video/large-vecteezy_selective-focus-on-a-car-male-customer-talking-to-auto_33116350_x-large.mp4" type="video/mp4">
-                Ваш браузер не поддерживает видео.
             </video>
             <div class="video-overlay"></div>
         </div>
         
-        <!-- Навигация -->
         <nav class="navbar">
             <div class="container nav-container">
                 <div class="logo">
                     <h1>AutoElite</h1>
                     <p>Премиальный автосалон с 2010 года</p>
                 </div>
-                
                 <ul class="nav-menu">
                     <li><a href="#home">Главная</a></li>
                     <li class="dropdown">
@@ -797,7 +574,6 @@ if (!empty($_SESSION['generated_login']) && $justSaved) {
                     <li><a href="#contacts">Контакты</a></li>
                     <li><a href="#order-form" class="btn-contact">Заказать авто</a></li>
                 </ul>
-                
                 <div class="mobile-menu-btn" id="mobileMenuBtn">
                     <i class="fas fa-bars"></i>
                 </div>
@@ -807,9 +583,7 @@ if (!empty($_SESSION['generated_login']) && $justSaved) {
         <div class="mobile-menu" id="mobileMenu">
             <div class="mobile-menu-header">
                 <h2>AutoElite</h2>
-                <button class="close-menu" id="closeMenuBtn">
-                    <i class="fas fa-times"></i>
-                </button>
+                <button class="close-menu" id="closeMenuBtn"><i class="fas fa-times"></i></button>
             </div>
             <ul class="mobile-nav">
                 <li><a href="#home">Главная</a></li>
@@ -835,7 +609,6 @@ if (!empty($_SESSION['generated_login']) && $justSaved) {
             <div class="container">
                 <h2 class="section-title">Популярные модели</h2>
                 <p class="section-subtitle">Автомобили, которые выбирают наши клиенты</p>
-                
                 <div class="slider-container">
                     <div class="slider">
                         <div class="slide active">
@@ -850,7 +623,6 @@ if (!empty($_SESSION['generated_login']) && $justSaved) {
                                 <a href="#order-form" class="btn-order">Заказать</a>
                             </div>
                         </div>
-                        
                         <div class="slide">
                             <div class="slide-image">
                                 <img src="https://i.pinimg.com/1200x/5d/74/97/5d749788759bc112b30f99158c4a2b87.jpg" alt="Mercedes-Benz S-Class" class="car-image">
@@ -863,7 +635,6 @@ if (!empty($_SESSION['generated_login']) && $justSaved) {
                                 <a href="#order-form" class="btn-order">Заказать</a>
                             </div>
                         </div>
-                        
                         <div class="slide">
                             <div class="slide-image">
                                 <img src="https://i.pinimg.com/1200x/20/cc/3b/20cc3b1b0ec4220d4d4e35e73de480c9.jpg" alt="BMW 7 Series" class="car-image">
@@ -877,14 +648,8 @@ if (!empty($_SESSION['generated_login']) && $justSaved) {
                             </div>
                         </div>
                     </div>
-                    
-                    <button class="slider-btn prev-btn" id="prevBtn">
-                        <i class="fas fa-chevron-left"></i>
-                    </button>
-                    <button class="slider-btn next-btn" id="nextBtn">
-                        <i class="fas fa-chevron-right"></i>
-                    </button>
-                    
+                    <button class="slider-btn prev-btn" id="prevBtn"><i class="fas fa-chevron-left"></i></button>
+                    <button class="slider-btn next-btn" id="nextBtn"><i class="fas fa-chevron-right"></i></button>
                     <div class="slider-indicators">
                         <span class="indicator active" data-slide="0"></span>
                         <span class="indicator" data-slide="1"></span>
@@ -898,43 +663,13 @@ if (!empty($_SESSION['generated_login']) && $justSaved) {
             <div class="container">
                 <h2 class="section-title">Наши услуги</h2>
                 <p class="section-subtitle">Полный комплекс услуг для вашего комфорта</p>
-                
                 <div class="services-grid">
-                    <div class="service-card">
-                        <i class="fas fa-car service-icon"></i>
-                        <h3>Продажа новых авто</h3>
-                        <p>Широкий выбор новых автомобилей премиум-класса от официальных дилеров</p>
-                    </div>
-                    
-                    <div class="service-card">
-                        <i class="fas fa-credit-card service-icon"></i>
-                        <h3>Кредитование</h3>
-                        <p>Выгодные программы кредитования и лизинга от партнерских банков</p>
-                    </div>
-                    
-                    <div class="service-card">
-                        <i class="fas fa-exchange-alt service-icon"></i>
-                        <h3>Трейд-ин</h3>
-                        <p>Выгодный обмен вашего автомобиля на новую модель с доплатой</p>
-                    </div>
-                    
-                    <div class="service-card">
-                        <i class="fas fa-search service-icon"></i>
-                        <h3>Поиск авто</h3>
-                        <p>Поиск и доставка автомобилей по индивидуальным требованиям</p>
-                    </div>
-                    
-                    <div class="service-card">
-                        <i class="fas fa-tools service-icon"></i>
-                        <h3>Сервисное обслуживание</h3>
-                        <p>Полное ТО и ремонт автомобилей в собственном сервисном центре</p>
-                    </div>
-                    
-                    <div class="service-card">
-                        <i class="fas fa-spray-can service-icon"></i>
-                        <h3>Детейлинг</h3>
-                        <p>Премиум-уход за автомобилем: химчистка, полировка, защитные покрытия</p>
-                    </div>
+                    <div class="service-card"><i class="fas fa-car service-icon"></i><h3>Продажа новых авто</h3><p>Широкий выбор новых автомобилей премиум-класса</p></div>
+                    <div class="service-card"><i class="fas fa-credit-card service-icon"></i><h3>Кредитование</h3><p>Выгодные программы кредитования и лизинга</p></div>
+                    <div class="service-card"><i class="fas fa-exchange-alt service-icon"></i><h3>Трейд-ин</h3><p>Выгодный обмен вашего автомобиля на новую модель</p></div>
+                    <div class="service-card"><i class="fas fa-search service-icon"></i><h3>Поиск авто</h3><p>Поиск и доставка автомобилей по индивидуальным требованиям</p></div>
+                    <div class="service-card"><i class="fas fa-tools service-icon"></i><h3>Сервисное обслуживание</h3><p>Полное ТО и ремонт автомобилей</p></div>
+                    <div class="service-card"><i class="fas fa-spray-can service-icon"></i><h3>Детейлинг</h3><p>Премиум-уход за автомобилем</p></div>
                 </div>
             </div>
         </section>
@@ -947,36 +682,28 @@ if (!empty($_SESSION['generated_login']) && $justSaved) {
                         <h2>🚗 Оставить заявку на автомобиль</h2>
                         <p>Заполните форму, и мы свяжемся с вами в ближайшее время</p>
                     </div>
-                    
                     <div class="order-form-body">
                         <div id="ajaxMessages"></div>
                         
                         <?php foreach($messages as $m): ?>
                             <div class="success-message"><?= $m ?></div>
                         <?php endforeach; ?>
-                        <?php if (!empty($errors['db_error'])): ?>
-                            <div class="success-message" style="background:#f8d7da; color:#721c24;"><?= $errors['db_error'] ?></div>
-                        <?php endif; ?>
                         
-                        <!-- АВТОРИЗАЦИЯ -->
                         <?php if (!isset($_SESSION['user_id'])): ?>
                             <div class="auth-section" id="authSection">
                                 <h3>🔐 Авторизация для редактирования заявки</h3>
                                 <?php if (!empty($loginError)): ?>
                                     <div class="error-message"><?= $loginError ?></div>
                                 <?php endif; ?>
-                                
                                 <form method="POST" id="loginForm">
                                     <div class="form-group">
                                         <label>Логин</label>
-                                        <input type="text" name="login" id="loginInput" class="<?= !empty($loginError) ? 'form-error' : '' ?>">
+                                        <input type="text" name="login" id="loginInput">
                                     </div>
-                                    
                                     <div class="form-group">
                                         <label>Пароль</label>
-                                        <input type="password" name="password" id="passwordInput" class="<?= !empty($loginError) ? 'form-error' : '' ?>">
+                                        <input type="password" name="password" id="passwordInput">
                                     </div>
-                                    
                                     <button type="submit" name="login_submit" class="btn-submit">Войти</button>
                                 </form>
                             </div>
@@ -988,51 +715,44 @@ if (!empty($_SESSION['generated_login']) && $justSaved) {
                             </div>
                         <?php endif; ?>
                         
-                        <!-- ОСНОВНАЯ ФОРМА -->
                         <form method="POST" id="orderForm">
                             <div class="form-group">
                                 <label>ФИО *</label>
-                                <input type="text" name="full_name" id="full_name" value="<?= htmlspecialchars($values['full_name'] ?? '') ?>" class="<?= isset($errors['full_name']) ? 'form-error' : '' ?>">
+                                <input type="text" name="full_name" id="full_name" value="<?= htmlspecialchars($values['full_name'] ?? '') ?>">
                                 <div class="error-message" id="full_name_error"><?= $errors['full_name'] ?? '' ?></div>
                             </div>
                             
                             <div class="form-group">
                                 <label>Телефон *</label>
-                                <input type="tel" name="phone" id="phone" value="<?= htmlspecialchars($values['phone'] ?? '') ?>" class="<?= isset($errors['phone']) ? 'form-error' : '' ?>">
+                                <input type="tel" name="phone" id="phone" value="<?= htmlspecialchars($values['phone'] ?? '') ?>">
                                 <div class="error-message" id="phone_error"><?= $errors['phone'] ?? '' ?></div>
                             </div>
                             
                             <div class="form-group">
                                 <label>E-mail *</label>
-                                <input type="email" name="email" id="email" value="<?= htmlspecialchars($values['email'] ?? '') ?>" class="<?= isset($errors['email']) ? 'form-error' : '' ?>">
+                                <input type="email" name="email" id="email" value="<?= htmlspecialchars($values['email'] ?? '') ?>">
                                 <div class="error-message" id="email_error"><?= $errors['email'] ?? '' ?></div>
                             </div>
                             
                             <div class="form-group">
                                 <label>Дата рождения *</label>
-                                <input type="date" name="birth_date" id="birth_date" value="<?= htmlspecialchars($values['birth_date'] ?? '') ?>" class="<?= isset($errors['birth_date']) ? 'form-error' : '' ?>">
+                                <input type="date" name="birth_date" id="birth_date" value="<?= htmlspecialchars($values['birth_date'] ?? '') ?>">
                                 <div class="error-message" id="birth_date_error"><?= $errors['birth_date'] ?? '' ?></div>
                             </div>
                             
                             <div class="form-group">
                                 <label>Пол *</label>
                                 <div class="radio-group">
-                                    <label>
-                                        <input type="radio" name="gender" value="male" <?= (($values['gender'] ?? '') == 'male') ? 'checked' : '' ?>> Мужской
-                                    </label>
-                                    <label>
-                                        <input type="radio" name="gender" value="female" <?= (($values['gender'] ?? '') == 'female') ? 'checked' : '' ?>> Женский
-                                    </label>
-                                    <label>
-                                        <input type="radio" name="gender" value="other" <?= (($values['gender'] ?? '') == 'other') ? 'checked' : '' ?>> Другой
-                                    </label>
+                                    <label><input type="radio" name="gender" value="male" <?= (($values['gender'] ?? '') == 'male') ? 'checked' : '' ?>> Мужской</label>
+                                    <label><input type="radio" name="gender" value="female" <?= (($values['gender'] ?? '') == 'female') ? 'checked' : '' ?>> Женский</label>
+                                    <label><input type="radio" name="gender" value="other" <?= (($values['gender'] ?? '') == 'other') ? 'checked' : '' ?>> Другой</label>
                                 </div>
                                 <div class="error-message" id="gender_error"><?= $errors['gender'] ?? '' ?></div>
                             </div>
                             
                             <div class="form-group">
                                 <label>Интересующие автомобили * (можно выбрать несколько)</label>
-                                <select name="cars[]" id="cars" multiple class="<?= isset($errors['cars']) ? 'form-error' : '' ?>">
+                                <select name="cars[]" id="cars" multiple>
                                     <?php foreach ($carsList as $car): ?>
                                         <option value="<?= $car['id'] ?>" <?= in_array($car['id'], $values['cars'] ?? []) ? 'selected' : '' ?>>
                                             <?= htmlspecialchars($car['name']) ?> - <?= htmlspecialchars($car['price']) ?>
@@ -1061,9 +781,7 @@ if (!empty($_SESSION['generated_login']) && $justSaved) {
                         </form>
                         
                         <?php if (!isset($_SESSION['user_id'])): ?>
-                            <p style="margin-top: 20px; text-align: center; color: #666; font-size: 0.85em;">
-                                * После отправки заявки вы получите логин и пароль для редактирования данных
-                            </p>
+                            <p style="margin-top: 20px; text-align: center; color: #666; font-size: 0.85em;">* После отправки заявки вы получите логин и пароль для редактирования данных</p>
                         <?php endif; ?>
                     </div>
                 </div>
@@ -1080,14 +798,12 @@ if (!empty($_SESSION['generated_login']) && $justSaved) {
                         <p>+7 (495) 123-45-67</p>
                         <p>info@autoelite.ru</p>
                     </div>
-                    
                     <div class="footer-hours">
                         <h4>Часы работы</h4>
                         <p>Пн-Пт: 9:00 - 21:00</p>
                         <p>Сб: 10:00 - 20:00</p>
                         <p>Вс: 10:00 - 18:00</p>
                     </div>
-                    
                     <div class="footer-social">
                         <h4>Мы в соцсетях</h4>
                         <div class="social-icons">
@@ -1098,7 +814,6 @@ if (!empty($_SESSION['generated_login']) && $justSaved) {
                         </div>
                     </div>
                 </div>
-                
                 <div class="footer-bottom">
                     <p>&copy; 2024 AutoElite. Все права защищены.</p>
                 </div>
@@ -1106,17 +821,13 @@ if (!empty($_SESSION['generated_login']) && $justSaved) {
         </footer>
     </main>
     
-    <!-- Кнопка для администратора -->
     <div class="admin-link" id="adminBtn">
         <i class="fas fa-shield-alt"></i> Администратору
     </div>
 
-    <!-- Модальное окно для входа в админку -->
     <div class="modal-overlay hidden" id="adminModal">
         <div class="modal">
-            <button class="modal-close" id="modalClose">
-                <i class="fas fa-times"></i>
-            </button>
+            <button class="modal-close" id="modalClose"><i class="fas fa-times"></i></button>
             <h2 class="modal-title">🔐 Доступ администратора</h2>
             <form id="adminLoginForm">
                 <div class="form-group">
@@ -1134,7 +845,6 @@ if (!empty($_SESSION['generated_login']) && $justSaved) {
     </div>
 
     <script>
-        // Основной скрипт для слайдера и AJAX отправки формы
         document.addEventListener('DOMContentLoaded', function() {
             // Слайдер
             const slider = document.querySelector('.slider');
@@ -1153,40 +863,16 @@ if (!empty($_SESSION['generated_login']) && $justSaved) {
                 });
             }
             
-            if (nextBtn) {
-                nextBtn.addEventListener('click', function() {
-                    currentSlide = (currentSlide + 1) % totalSlides;
-                    updateSlider();
-                });
-            }
-            
-            if (prevBtn) {
-                prevBtn.addEventListener('click', function() {
-                    currentSlide = (currentSlide - 1 + totalSlides) % totalSlides;
-                    updateSlider();
-                });
-            }
-            
+            if (nextBtn) nextBtn.addEventListener('click', function() { currentSlide = (currentSlide + 1) % totalSlides; updateSlider(); });
+            if (prevBtn) prevBtn.addEventListener('click', function() { currentSlide = (currentSlide - 1 + totalSlides) % totalSlides; updateSlider(); });
             indicators.forEach(indicator => {
-                indicator.addEventListener('click', function() {
-                    currentSlide = parseInt(this.getAttribute('data-slide'));
-                    updateSlider();
-                });
+                indicator.addEventListener('click', function() { currentSlide = parseInt(this.getAttribute('data-slide')); updateSlider(); });
             });
             
-            let slideInterval = setInterval(() => {
-                currentSlide = (currentSlide + 1) % totalSlides;
-                updateSlider();
-            }, 5000);
-            
+            let slideInterval = setInterval(() => { currentSlide = (currentSlide + 1) % totalSlides; updateSlider(); }, 5000);
             if (slider) {
                 slider.addEventListener('mouseenter', () => clearInterval(slideInterval));
-                slider.addEventListener('mouseleave', () => {
-                    slideInterval = setInterval(() => {
-                        currentSlide = (currentSlide + 1) % totalSlides;
-                        updateSlider();
-                    }, 5000);
-                });
+                slider.addEventListener('mouseleave', () => { slideInterval = setInterval(() => { currentSlide = (currentSlide + 1) % totalSlides; updateSlider(); }, 5000); });
             }
             
             // Плавная прокрутка
@@ -1198,13 +884,10 @@ if (!empty($_SESSION['generated_login']) && $justSaved) {
                     const targetElement = document.querySelector(href);
                     if (targetElement) {
                         const headerHeight = document.querySelector('.navbar')?.offsetHeight || 80;
-                        const targetPosition = targetElement.offsetTop - headerHeight - 20;
-                        window.scrollTo({ top: targetPosition, behavior: 'smooth' });
+                        window.scrollTo({ top: targetElement.offsetTop - headerHeight - 20, behavior: 'smooth' });
                     }
                     const mobileMenu = document.getElementById('mobileMenu');
-                    if (mobileMenu && mobileMenu.classList.contains('active')) {
-                        mobileMenu.classList.remove('active');
-                    }
+                    if (mobileMenu && mobileMenu.classList.contains('active')) mobileMenu.classList.remove('active');
                 });
             });
             
@@ -1212,116 +895,55 @@ if (!empty($_SESSION['generated_login']) && $justSaved) {
             const mobileMenuBtn = document.getElementById('mobileMenuBtn');
             const mobileMenu = document.getElementById('mobileMenu');
             const closeMenuBtn = document.getElementById('closeMenuBtn');
+            if (mobileMenuBtn) mobileMenuBtn.addEventListener('click', function() { mobileMenu.classList.add('active'); document.body.style.overflow = 'hidden'; });
+            if (closeMenuBtn) closeMenuBtn.addEventListener('click', function() { mobileMenu.classList.remove('active'); document.body.style.overflow = ''; });
             
-            if (mobileMenuBtn) {
-                mobileMenuBtn.addEventListener('click', function() {
-                    mobileMenu.classList.add('active');
-                    document.body.style.overflow = 'hidden';
-                });
-            }
-            
-            if (closeMenuBtn) {
-                closeMenuBtn.addEventListener('click', function() {
-                    mobileMenu.classList.remove('active');
-                    document.body.style.overflow = '';
-                });
-            }
-            
-            // Изменение фона навигации
-            window.addEventListener('scroll', function() {
-                const navbar = document.querySelector('.navbar');
-                if (navbar) {
-                    if (window.scrollY > 100) {
-                        navbar.style.backgroundColor = 'rgba(13, 27, 42, 0.95)';
-                        navbar.style.boxShadow = '0 5px 20px rgba(0, 0, 0, 0.1)';
-                    } else {
-                        navbar.style.backgroundColor = 'rgba(13, 27, 42, 0.9)';
-                        navbar.style.boxShadow = 'none';
-                    }
-                }
-            });
-            
-            updateSlider();
-            
-            // -------------------- АДМИН МОДАЛЬНОЕ ОКНО --------------------
+            // Админ модальное окно
             const adminBtn = document.getElementById('adminBtn');
             const adminModal = document.getElementById('adminModal');
             const modalClose = document.getElementById('modalClose');
             const adminLoginForm = document.getElementById('adminLoginForm');
             const adminError = document.getElementById('adminError');
             
-            if (adminBtn) {
-                adminBtn.addEventListener('click', function() {
-                    adminModal.classList.remove('hidden');
-                    document.body.style.overflow = 'hidden';
-                });
-            }
-            
-            if (modalClose) {
-                modalClose.addEventListener('click', function() {
-                    adminModal.classList.add('hidden');
-                    document.body.style.overflow = '';
-                });
-            }
-            
-            adminModal?.addEventListener('click', function(e) {
-                if (e.target === adminModal) {
-                    adminModal.classList.add('hidden');
-                    document.body.style.overflow = '';
-                }
-            });
+            if (adminBtn) adminBtn.addEventListener('click', function() { adminModal.classList.remove('hidden'); document.body.style.overflow = 'hidden'; });
+            if (modalClose) modalClose.addEventListener('click', function() { adminModal.classList.add('hidden'); document.body.style.overflow = ''; });
+            adminModal?.addEventListener('click', function(e) { if (e.target === adminModal) { adminModal.classList.add('hidden'); document.body.style.overflow = ''; } });
             
             if (adminLoginForm) {
                 adminLoginForm.addEventListener('submit', function(e) {
                     e.preventDefault();
                     const login = document.getElementById('adminLogin').value;
                     const password = document.getElementById('adminPassword').value;
-                    
-                    if (login === 'admin' && password === 'admin123') {
-                        window.location.href = 'admin.php';
-                    } else {
-                        adminError.textContent = 'Неверный логин или пароль администратора';
-                    }
+                    if (login === 'admin' && password === 'admin123') window.location.href = 'admin.php';
+                    else adminError.textContent = 'Неверный логин или пароль администратора';
                 });
             }
             
-            // -------------------- AJAX ОТПРАВКА ФОРМЫ --------------------
+            // AJAX отправка формы
             const orderForm = document.getElementById('orderForm');
             const formSubmitBtn = document.getElementById('formSubmitBtn');
             const ajaxMessages = document.getElementById('ajaxMessages');
             
             function clearErrors() {
                 document.querySelectorAll('.error-message').forEach(el => el.innerHTML = '');
-                document.querySelectorAll('.form-group input, .form-group select, .form-group textarea').forEach(el => {
-                    el.classList.remove('form-error');
-                });
+                document.querySelectorAll('.form-group input, .form-group select, .form-group textarea').forEach(el => el.classList.remove('form-error'));
             }
             
             function showErrors(errors) {
                 for (const [field, message] of Object.entries(errors)) {
                     const errorEl = document.getElementById(`${field}_error`);
-                    if (errorEl) {
-                        errorEl.innerHTML = message;
-                    }
+                    if (errorEl) errorEl.innerHTML = message;
                     const inputEl = document.getElementById(field);
-                    if (inputEl) {
-                        inputEl.classList.add('form-error');
-                    }
-                    if (field === 'cars') {
-                        const selectEl = document.getElementById('cars');
-                        if (selectEl) selectEl.classList.add('form-error');
-                    }
-                    if (field === 'contract') {
-                        const contractEl = document.getElementById('contract');
-                        if (contractEl) contractEl.classList.add('form-error');
-                    }
+                    if (inputEl) inputEl.classList.add('form-error');
+                    if (field === 'cars') document.getElementById('cars')?.classList.add('form-error');
+                    if (field === 'contract') document.getElementById('contract')?.classList.add('form-error');
                 }
             }
             
             function showMessage(message, isSuccess = true) {
                 if (ajaxMessages) {
                     const msgDiv = document.createElement('div');
-                    msgDiv.className = isSuccess ? 'success-message' : 'success-message';
+                    msgDiv.className = 'success-message';
                     msgDiv.style.cssText = isSuccess ? '' : 'background:#f8d7da; color:#721c24;';
                     msgDiv.innerHTML = message;
                     ajaxMessages.appendChild(msgDiv);
@@ -1338,60 +960,32 @@ if (!empty($_SESSION['generated_login']) && $justSaved) {
                     const formData = new FormData(orderForm);
                     const data = {};
                     for (let [key, value] of formData.entries()) {
-                        if (key === 'cars[]') {
-                            if (!data['cars']) data['cars'] = [];
-                            data['cars'].push(value);
-                        } else if (key === 'contract') {
-                            data['contract'] = true;
-                        } else {
-                            data[key] = value;
-                        }
+                        if (key === 'cars[]') { if (!data['cars']) data['cars'] = []; data['cars'].push(value); }
+                        else if (key === 'contract') data['contract'] = true;
+                        else data[key] = value;
                     }
                     if (!data['cars']) data['cars'] = [];
                     if (!data['contract']) data['contract'] = false;
                     
-                    if (formSubmitBtn) {
-                        formSubmitBtn.disabled = true;
-                        formSubmitBtn.textContent = 'Отправка...';
-                    }
+                    if (formSubmitBtn) { formSubmitBtn.disabled = true; formSubmitBtn.textContent = 'Отправка...'; }
                     
                     try {
                         const response = await fetch(window.location.href, {
-                            method: 'POST',
-                            headers: {
-                                'Content-Type': 'application/json',
-                                'Accept': 'application/json'
-                            },
+                            method: 'POST', headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
                             body: JSON.stringify(data)
                         });
-                        
                         const result = await response.json();
-                        
                         if (result.success) {
                             showMessage(result.messages.join('<br>'), true);
-                            if (result.credentials) {
-                                showMessage(`✅ Ваши данные для входа:<br><br>Логин: <b>${result.credentials.login}</b><br>Пароль: <b>${result.credentials.password}</b><br><br>⚠️ Сохраните их! Теперь вы можете авторизоваться и редактировать свои данные.`, true);
-                            }
-                            if (result.updated) {
-                                setTimeout(() => window.location.reload(), 2000);
-                            } else {
-                                setTimeout(() => window.location.reload(), 3000);
-                            }
-                        } else if (result.errors) {
-                            showErrors(result.errors);
-                            showMessage('Пожалуйста, исправьте ошибки в форме.', false);
-                        }
-                    } catch (error) {
-                        console.error('Ошибка:', error);
-                        showMessage('Ошибка при отправке данных. Попробуйте еще раз.', false);
-                    } finally {
-                        if (formSubmitBtn) {
-                            formSubmitBtn.disabled = false;
-                            formSubmitBtn.textContent = '<?= isset($_SESSION['user_id']) ? '✏️ Обновить заявку' : '🚗 Отправить заявку' ?>';
-                        }
-                    }
+                            if (result.credentials) showMessage(`✅ Ваши данные для входа:<br><br>Логин: <b>${result.credentials.login}</b><br>Пароль: <b>${result.credentials.password}</b><br><br>⚠️ Сохраните их!`, true);
+                            setTimeout(() => window.location.reload(), 3000);
+                        } else if (result.errors) { showErrors(result.errors); showMessage('Пожалуйста, исправьте ошибки в форме.', false); }
+                    } catch (error) { showMessage('Ошибка при отправке данных. Попробуйте еще раз.', false); }
+                    finally { if (formSubmitBtn) { formSubmitBtn.disabled = false; formSubmitBtn.textContent = '<?= isset($_SESSION['user_id']) ? '✏️ Обновить заявку' : '🚗 Отправить заявку' ?>'; } }
                 });
             }
+            
+            updateSlider();
         });
     </script>
     <script src="script.js"></script>
